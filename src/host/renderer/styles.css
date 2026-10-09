@@ -387,7 +387,8 @@ body.resizing {
   min-width: 0;
 }
 
-/* Above a proposed diff: what it is, and Accept / Reject. */
+/* Above a proposed diff (what it is, Accept / Reject) or a Markdown preview (source toggle). */
+.editor-toolbar,
 .diff-toolbar {
   display: flex;
   align-items: center;
@@ -398,10 +399,123 @@ body.resizing {
   background: var(--vscode-editor-background);
 }
 
-.diff-toolbar-hint {
+.diff-toolbar-hint,
+.editor-toolbar-spacer {
   flex: 1 1 auto;
   min-width: 0;
   color: var(--vscode-descriptionForeground);
+}
+
+/* ---- Markdown preview (after VS Code's markdown.css) ------------------------ */
+
+.markdown-preview {
+  position: relative;
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+  padding: 0 26px 26px;
+  font-family: var(--vscode-markdown-font-family, var(--vscode-font-family));
+  font-size: var(--vscode-markdown-font-size, 14px);
+  line-height: var(--vscode-markdown-line-height, 22px);
+  color: var(--vscode-editor-foreground);
+  word-wrap: break-word;
+  user-select: text;
+  outline: none;
+}
+
+.markdown-preview h1,
+.markdown-preview h2,
+.markdown-preview h3,
+.markdown-preview h4,
+.markdown-preview h5,
+.markdown-preview h6 {
+  margin: 1em 0 0.5em;
+  font-weight: 600;
+  line-height: 1.25;
+}
+
+.markdown-preview h1 {
+  font-size: 2em;
+  padding-bottom: 0.3em;
+  border-bottom: 1px solid var(--vscode-panel-border, transparent);
+}
+
+.markdown-preview h2 {
+  font-size: 1.5em;
+  padding-bottom: 0.3em;
+  border-bottom: 1px solid var(--vscode-panel-border, transparent);
+}
+
+.markdown-preview h3 {
+  font-size: 1.25em;
+}
+
+.markdown-preview p,
+.markdown-preview ul,
+.markdown-preview ol,
+.markdown-preview blockquote,
+.markdown-preview pre,
+.markdown-preview table {
+  margin: 0 0 0.7em;
+}
+
+.markdown-preview a {
+  color: var(--vscode-textLink-foreground);
+  text-decoration: none;
+}
+
+.markdown-preview a:hover {
+  color: var(--vscode-textLink-activeForeground);
+  text-decoration: underline;
+}
+
+.markdown-preview code {
+  font-family: var(--vscode-editor-font-family);
+  font-size: 0.9em;
+  color: var(--vscode-textPreformat-foreground);
+  background: var(--vscode-textPreformat-background);
+  padding: 1px 3px;
+}
+
+.markdown-preview pre {
+  padding: 12px 16px;
+  overflow: auto;
+  background: var(--vscode-textCodeBlock-background) !important;
+  border: 1px solid var(--vscode-panel-border, transparent);
+}
+
+.markdown-preview pre code {
+  padding: 0;
+  color: inherit;
+  background: none;
+  font-size: 1em;
+}
+
+.markdown-preview blockquote {
+  margin-left: 0;
+  padding: 0 16px;
+  border-left: 5px solid var(--vscode-textBlockQuote-border);
+  background: var(--vscode-textBlockQuote-background);
+}
+
+.markdown-preview table {
+  border-collapse: collapse;
+}
+
+.markdown-preview th,
+.markdown-preview td {
+  padding: 4px 10px;
+  border: 1px solid var(--vscode-panel-border, var(--vscode-editorGroup-border));
+}
+
+.markdown-preview hr {
+  height: 1px;
+  border: 0;
+  background: var(--vscode-panel-border, var(--vscode-editorGroup-border));
+}
+
+.markdown-preview img {
+  max-width: 100%;
 }
 
 /* Monaco's widgets (find, suggest, hover) follow the shell's square corners. */

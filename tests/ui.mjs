@@ -325,6 +325,28 @@ await step('Compare Active File with Saved opens a diff tab (vscode.diff)', asyn
   return label;
 });
 
+await step('a Markdown file opens as a preview, with highlighted code, and toggles to source', async () => {
+  writeFileSync(
+    path.join(workspace, 'notes.md'),
+    '# Plan notes\n\nSee [the sample](src/sample.ts).\n\n```ts\nconst x: number = 1;\n```\n',
+    'utf8',
+  );
+  await press('Control+P');
+  await page.locator('.quick-input-filter').fill('notes.md');
+  await waitFor(async () => (await page.locator('.quick-input-item').count()) > 0, 10_000, 'notes.md in the list');
+  await page.locator('.quick-input-filter').press('Enter');
+  const heading = page.locator('#content-pane .markdown-preview:not([hidden]) h1');
+  await waitFor(async () => (await heading.count()) === 1 && (await heading.innerText()) === 'Plan notes', 10_000, 'the rendered heading');
+  await waitFor(async () => (await page.locator('#content-pane .markdown-preview pre.shiki').count()) === 1, 10_000, 'a highlighted code block');
+  await page.locator('#content-pane .editor-toolbar .button', { hasText: 'Open Source' }).click();
+  await waitFor(async () => (await editorText()).includes('# Plan notes'), 5000, 'the source view');
+  await page.locator('#content-pane .editor-toolbar .button', { hasText: 'Open Preview' }).click();
+  await waitFor(() => heading.isVisible(), 5000, 'the preview again');
+  await page.locator('#content-pane .markdown-preview').click();
+  await press('Control+W');
+  await waitFor(async () => (await contentTabs().count()) === 1, 5000, 'the Markdown tab to close');
+});
+
 await step('Ctrl+W in the editor closes its tab and the pane hides; the conversation stays', async () => {
   const conversations = await tabCount();
   await page.locator('#content-pane .monaco-editor .view-lines').click();

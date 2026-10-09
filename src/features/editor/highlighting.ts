@@ -158,6 +158,24 @@ export class Highlighting {
     }
   }
 
+  /**
+   * Highlights a code block for HTML views (the Markdown preview), in the current theme's
+   * token colors. `language` is a fence info string or a language id; unknown ones stay plain.
+   */
+  async codeToHtml(code: string, language: string): Promise<string | undefined> {
+    const grammar = grammarFor(language.toLowerCase());
+    if (!grammar || !this.themeName) {
+      return undefined;
+    }
+    await this.ensureLanguage(language.toLowerCase());
+    const highlighter = await this.load();
+    try {
+      return highlighter.codeToHtml(code, { lang: grammar, theme: this.themeName });
+    } catch {
+      return undefined; // The grammar failed to load; the block stays plain.
+    }
+  }
+
   /** Makes sure `languageId` is registered with Monaco and highlighted (loading its grammar once). */
   ensureLanguage(languageId: string): Promise<void> {
     if (!this.monaco.languages.getLanguages().some((language) => language.id === languageId)) {

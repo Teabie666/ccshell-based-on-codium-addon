@@ -11,6 +11,7 @@ import { commandPaletteModule } from '../../features/commandPalette';
 import { contentPaneModule } from '../../features/contentPane';
 import { conversationsModule } from '../../features/conversations';
 import { editorModule } from '../../features/editor';
+import { markdownModule } from '../../features/markdown';
 import { quickOpenModule } from '../../features/quickOpen';
 import { extensionHostStatusModule } from '../../features/extensionHostStatus';
 import { extensionMenusModule } from '../../features/extensionMenus';
@@ -24,6 +25,7 @@ const modules: ShellModule[] = [
   conversationsModule,
   contentPaneModule,
   editorModule,
+  markdownModule,
   quickOpenModule,
   sessionsModule,
   themesModule,

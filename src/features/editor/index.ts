@@ -22,6 +22,7 @@ import {
 import { createServiceId } from '../../core/services';
 import type { ThemeService } from '../../core/themes';
 import type { Dialogs } from '../../core/dialogs';
+import { DisposableStore } from '../../platform/lifecycle';
 import type { ILogger } from '../../platform/log';
 import { getUiLanguage } from '../../platform/nls';
 import { SAVED_FILE_SCHEME, type ShowDiffEditorParams, type ShowTextEditorParams } from '../../platform/protocol';
@@ -35,7 +36,8 @@ import { loadMonaco, type MonacoApi } from './monaco';
 import { TextEditorPane, editorFontOptions, type TextInputData } from './textEditorPane';
 import { TextModels } from './textModels';
 
-const TEXT_INPUT = 'text';
+/** The input type of documents shown in a text editor (other modules may claim some, e.g. Markdown). */
+export const TEXT_INPUT = 'text';
 const DIFF_INPUT = 'diff';
 
 /** Content pane input id of an extension host tab (text or diff). */
@@ -81,6 +83,12 @@ export class TextEditorService {
 
   get modelService(): TextModels | undefined {
     return this.models;
+  }
+
+  /** Highlights a code block as HTML in the current theme (undefined: show it plain). */
+  async codeToHtml(code: string, language: string): Promise<string | undefined> {
+    const { highlighting } = await this.ready();
+    return highlighting.codeToHtml(code, language);
   }
 
   pane(editorId: string): TextEditorPane | undefined {
@@ -286,7 +294,18 @@ export const editorModule: ShellModule = {
     subscriptions.add(themes.onDidChange(() => editors.applyTheme()));
 
     const report = trackVisibleEditors(connection, contentPane, layout);
-    subscriptions.add(contentPane.onDidChangeActive(report));
+    // A pane can change its editors without changing tabs (Markdown preview <-> source).
+    const paneEditors = subscriptions.add(new DisposableStore());
+    subscriptions.add(
+      contentPane.onDidChangeActive((tab) => {
+        paneEditors.clear();
+        const onDidChange = tab?.pane.onDidChangeTextEditors;
+        if (onDidChange) {
+          paneEditors.add(onDidChange(report));
+        }
+        report();
+      }),
+    );
     subscriptions.add(layout.onDidChangeContentPaneVisibility(report));
 
     const updateContext = (): void => {
