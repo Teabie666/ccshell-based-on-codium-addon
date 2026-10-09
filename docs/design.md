@@ -1,0 +1,26 @@
+# 视觉规范
+
+结构学 Claude app（会话列表、对话、内容面板），视觉完全是 VS Code / Codium 的专业风格。
+
+## 规则
+
+1. **直角**：壳里所有元素 `border-radius: 0`（样式表里有全局规则）。插件自己的界面保持原样，不去改它。
+2. **颜色只用主题变量**：`var(--vscode-*)`，不写死任何颜色。新组件先去 VS Code 里找对应的颜色键（比如 `tab.activeBackground`、`quickInput.background`）。
+3. **1px 分隔线**，用 `--vscode-panel-border`、`--vscode-tab-border` 这类变量。
+4. **信息密度高**：行高 22px 左右，内边距小；不要大面积留白。
+5. **图标用 codicon**，跟 VS Code 一致；不用 emoji 当图标。
+6. **不要**：大圆角卡片、渐变、彩色大块背景、玻璃拟态、弹跳动画。阴影只用于浮层（弹出菜单、提示），而且只用 `--vscode-widget-shadow`。
+7. 字体：界面用 `--vscode-font-family`，代码用 `--vscode-editor-font-family`，都来自设置（`workbench.fontFamily`、`editor.fontFamily`）。中文界面靠页面的 `lang="zh-CN"` 让 Chromium 选系统的中文字体，不在样式表里写死字体名。
+
+## 文案（English / 简体中文）
+
+1. 壳里每一处界面文字都要有中英两份。代码里只写英文（模块目录的 `messages.ts`，`platform/nls.ts` 的 `defineMessages`）；中文在语言包 `src/nls/zh-cn.json`，键是 `命名空间.键`。还没翻译的条目显示英文，`npm run nls` 会列出来。
+2. 术语跟 VS Code 官方简体中文语言包一致：命令面板、颜色主题、首选项、查看、开发人员、撤消 / 恢复、剪切 / 复制 / 粘贴、全选、区分大小写、上一个 / 下一个匹配项、无结果、"第 {0} 项，共 {1} 项"。
+3. 产品名（Claude、Claude Code、ccshell）、快捷键（Ctrl+N）、设置键名和取值（`zh-cn`）保持原样。
+4. 中文里夹英文时，按 VS Code 的写法在中英文之间留空格（"重启 Claude Code"）；括号里是快捷键时用半角括号（"关闭 (Ctrl+W)"），其余用全角。
+5. 插件自己的界面没有本地化，保持英文；插件出现在壳里的文字（菜单项）由壳按命令 id 给中文名。
+6. 日志、代码注释、提交信息只用英文，不翻译。
+
+## 参照
+
+拿不准的时候，去 VSCodium 里看同类控件长什么样，照着做。

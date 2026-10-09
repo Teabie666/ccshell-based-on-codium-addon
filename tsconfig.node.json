@@ -1,0 +1,15 @@
+{
+  "extends": "./tsconfig.base.json",
+  "compilerOptions": {
+    "lib": ["ES2023"],
+    "types": ["node", "vscode"]
+  },
+  "include": [
+    "src/platform/**/*.ts",
+    "src/nls/**/*.ts",
+    "src/compat/**/*.ts",
+    "src/host/node/**/*.ts",
+    "src/host/main/**/*.ts",
+    "src/host/exthost/**/*.ts"
+  ]
+}

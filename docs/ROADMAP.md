@@ -1,0 +1,172 @@
+# ROADMAP
+
+完整计划在 [PLAN.md](PLAN.md)。这里只把各阶段（M0–M6，外加插进去的 M1.5 和可选的 M3.5）拆成勾选清单、记进度；两边对不上时以 PLAN.md 为准。
+
+`[x]` 已完成，`[ ]` 未完成。最后一次对照代码核对：2026-10-09。
+
+## 下一步
+
+1. 试用 M1.5，根据反馈调整后再开始 M2
+
+每个阶段结束都要做：typecheck、`npm test`、`node tests/ui.mjs`（动了 bridge / compat 再跑 `npm run smoke`）；看最新一次的 `shim-unimplemented.log`；确认没往 `C:\Program Files\VSCodium` 写任何东西、git 里没有密钥；用屏幕工具截图，跟 VSCodium 里的同一界面对比；用 `run-dev.cmd` 试用。
+
+测试现状（2026-10-09）：单元 115/115，语言包 0 条缺译，界面 11/11（M1.5 后）；smoke 7/7（M1 后跑的，M1.5 没动 bridge / compat）。
+
+## M0 技术验证：完成（2026-10-08）
+
+- [x] git 仓库和骨架：platform、protocol、最小 compat，以及 main、exthost、renderer
+- [x] 插件从 VSCodium 目录加载（`extensionLocator.ts`），在 utilityProcess 里激活（约 20 ms），开出对话 iframe
+- [x] 能收发消息
+- [x] 内嵌审批的接受和拒绝都生效（`open_diff` 先挂起，见 [ADR 0002](adr/0002-hold-open-diff-until-diff-editor.md)）
+- [x] `insert_at_mention` 能往输入框插纯文本；输入框能用 `[role="textbox"][aria-label="Message input"]` 定位（M3 的评论块要用）
+- [x] `io_message` 的结构确认清楚（smoke 会把结构写进 exthost.log）
+- [x] 登录状态跟 CLI 共用（凭据在 `~/.claude/`）
+- [x] 语音输入模块 `audio-capture.node` 在 Electron 44 下能加载（没实际录音测过）
+
+## M1 核心壳：完成（2026-10-09）
+
+- [x] core：服务注册表、模块（`ShellModule`，带版本号的 `ShellContext`，注册都可撤销）、命令、上下文键和 when 子句、快捷键、菜单（`core/menus.ts`）、布局
+- [x] 标题栏：程序名、文件夹名、对话标签页，Windows 原生窗口按钮（「文件夹 ▾」「API 接口 ▾」两个下拉放在 M4）
+- [x] 会话侧边栏：插件自带的会话列表 webview，Ctrl+B 开关，宽度可拖
+- [x] 多对话：标签页，Ctrl+N / Ctrl+W / Ctrl+Tab / Ctrl+1–9，Ctrl+Shift+T 重开关掉的对话
+- [x] 主题：从 VSCodium 抓了 6 套内置主题（`npm run capture-themes`），壳和 webview 共用；`ccshell.theme` 和字体设置改了实时生效；命令面板里能切
+- [x] 链接：webview 里的链接用外部浏览器打开
+- [x] 通知：窗口没焦点时，插件的消息发系统通知并闪任务栏
+- [x] 快捷键：在 main 里拦截，焦点在 webview 里也生效；命令面板 Ctrl+Shift+P / F1
+- [x] 缩放：Ctrl+= / Ctrl+- / Ctrl+0，会记住
+- [x] 对话内查找 Ctrl+F（在 webview 里用 CSS Custom Highlight API）
+- [x] 窗口位置记忆
+- [x] 重启后恢复对话（`panelRestore.ts`，借插件自己的 WebviewPanelSerializer）
+- [x] 日志：`logs\<启动时间>\` 下的 main.log、exthost.log、shim-unimplemented.log、output\
+- [x] 插件进程崩溃时提示，可以一键重启
+- [x] 右键菜单的基础项：撤销、重做、剪切、复制、粘贴、全选；链接的"在浏览器打开 / 复制地址"
+- [x] 右键菜单加插件的 `webview/context` 命令（2026-10-09）：在对话里右键有 Mark Session as Unread / Rename Session Tab / Add Session Tab to Group，会话列表里没有，跟 VS Code 一样
+  - exthost 从插件清单读出菜单（`host/exthost/contributions.ts`）→ `features/extensionMenus` 登记进 core 的菜单注册表，按 when 子句和 VS Code 的排序算出每个 webview 的菜单项，登记给主进程 → 主进程右键时按 iframe 地址追加到菜单末尾，点击后回到渲染进程执行插件命令
+  - 顺带补上 `showInputBox` 的 `validateInput`：重命名时空名字会被拦下，带着插件的提示再问一次
+- [x] 试用 M1（2026-10-09）。试用后的改动：右键菜单项去掉 "Claude Code: " 前缀；界面要有中文 → 新增 M1.5
+
+`claude-vscode.showLogs` 暂时只把日志路径写进 exthost.log，等 M2 的内容面板。
+
+## M1.5 界面语言：完成（2026-10-09）
+
+- [x] 机制：`platform/nls.ts`（`defineMessages`、`defineNames`、`{0}` 占位符、缺译回落英文），三个进程启动时定好语言；代码里只有英文，中文在语言包 `src/nls/zh-cn.json`，`npm run nls` 检查缺译和过时条目
+- [x] 设置 `ccshell.language`（`auto` / `zh-cn` / `en`，默认跟随系统）；命令面板"配置显示语言"；改了以后弹提示，点"重启"后生效，打开的对话会恢复
+- [x] 壳的全部现有文字两份：标题栏、标签页、空状态、查找、命令面板（含分类）、快速输入和对话框、通知、崩溃提示、右键菜单（编辑项用 Electron 的 role，但换上自己的文字）
+- [x] 插件的右键菜单项：中文按命令 id 自带译名（`features/extensionMenus/commandTitles.ts`）；英文去掉 "Claude Code: " 前缀
+- [x] `vscode.env.language` 和页面的 `lang` 属性跟着界面语言（中文靠 `lang` 用系统的中文字体）
+- [x] 内置主题名的中文（深色 Modern、浅色+……）
+- [x] 测试：nls 的单元测试；界面测试固定英文跑，最后在命令面板里切到中文、重启，检查命令面板和右键菜单
+- [x] 试用（2026-10-09）。试用后的改动：代码里只写英文，中文移进单独的语言包 `src/nls/zh-cn.json`，译文可以晚点批量补；`npm run nls` 检查缺的和过时的条目
+
+## M2 内容面板 + Monaco：未开始
+
+要加的依赖：`monaco-editor`、`shiki` + `@shikijs/monaco`、`marked` + `dompurify`。Monaco 的 worker 作为 esbuild 的额外入口单独打包（[ADR 0003](adr/0003-esbuild-for-all-bundles.md)）。
+
+- [ ] 内容面板：有东西时自动打开，`Ctrl+\` 开关，宽度可拖，标签页
+- [ ] core 的 views / editors 贡献点：按文件类型或 scheme 注册内容面板里的编辑器
+- [ ] Monaco 标签页：Shiki 高亮（dark-plus / light-plus，跟主题数据走），有行号；Monaco 自己的界面文字（查找、右键菜单）按界面语言加载它的语言包
+- [ ] 新加的界面文字都写中英两份（M1.5 的规矩，见 `docs/design.md` 的"文案"）
+- [ ] 打开文件：聊天里点文件（`open_file` → `showTextDocument`）、Ctrl+P 快速打开、拖进窗口
+- [ ] Ctrl+S 保存，未保存标记；磁盘上被 Claude 改了：没改过就自动重新载入，改过就提示冲突
+- [ ] compat 的文本文档（`textDocuments.ts`）跟 Monaco 模型对上：open / change / save / close 事件
+- [ ] Markdown：默认显示渲染后的预览，可以切到源码
+- [ ] 计划预览：插件的 `claudePlanPreview` webview（自带评论）作为一个标签页
+- [ ] diff 标签页（ADR 0002 改成真实实现）
+  - [ ] `vscode.diff` 打开 Monaco DiffEditor 标签页，同时往 `TabGroupsModel` 里加一个 `TabInputTextDiff(left, right)`，它的 close 回调负责关掉 diff 标签页
+  - [ ] 右侧可编辑，改动触发 `workspace.onDidChangeTextDocument`
+  - [ ] "接受 / 拒绝"按钮：先 `tabs.setActive(该标签)`，再执行 `claude-vscode.acceptProposedDiff` / `rejectProposedDiff`
+  - [ ] `extensionHost.ts` 里 `ClaudeWebviewBridge` 的 `diffEditorAvailable` 改成 true，bridge 不再挂起 `open_diff`；更新 ADR 0002 的状态
+  - [ ] 聊天里的内嵌审批照常能用
+- [ ] 选区同步：`window.activeTextEditor`、`visibleTextEditors`、`showTextDocument`、`onDidChangeTextEditorSelection` 接到 Monaco（现在是 `compat/vscode/window.ts` 里 `createEditorHandle` 的占位），聊天框显示"已选 N 行"
+- [ ] 标签页可以弹出成独立窗口
+- [ ] 日志进面板：`claude-vscode.showLogs` 和 bridge 拦截的 `open_output_panel` 都在内容面板里打开日志
+- [ ] smoke 改成 API 模式：接口地址、key、模型从环境变量读，注入测试设置里的 `claudeCode.environmentVariables`，不再用登录的订阅账号（条款只允许脚本走 API key；现在没配就拒绝运行）。用哪家的 key 到时候定
+- [ ] smoke 加两项：diff 标签页出现 → 点接受后文件改了，走一遍拒绝文件没变；点文件链接，Monaco 标签页显示高亮内容
+
+## M3 评论：未开始
+
+复刻插件"计划评论"的体验，做成 `features/comments`。
+
+- [ ] 添加：在 Monaco、Markdown 预览、diff 里选中文字 → 旁边浮出"评论"按钮 → 评论小窗（引用片段、输入框、"添加评论 / 取消"，Ctrl+Enter 也能添加）
+- [ ] 显示：按对话归属，在输入框正上方一条一块，新的往上叠；每块有引用片段（截断）、`文件名:行号`（点击跳回原文）、评论内容、编辑和删除按钮；太多时折叠成"N 条评论"
+- [ ] 评论块是注入到 iframe 里的独立 DOM，用同一套主题变量，直角；用 role / aria 定位输入框（M0 已验证）；定位失败就退回到壳层渲染的评论栏
+- [ ] 发送：bridge 拦截 `io_message`，把每条评论按 `[Re: "<片段>" — <文件>:<行>] <评论>` 一条一段附加进去，再加一个说明头；不往用户的输入文字里硬塞；发送后清空评论块
+- [ ] 持久化到 workspaceState，重启不丢；插件自己计划预览里的评论走插件原生流程，不重复处理
+- [ ] 单元测试：评论格式；smoke：选中文字加两条评论 → 输入框上方出现两个块 → 发送后 Claude 收到的消息里有两段 `[Re: …]`，评论块被清空
+
+## M3.5 插件界面汉化（可选）：未开始
+
+- [ ] 在本地从插件的 webview 代码里整理界面文字（按插件版本），只挑大致一行以内的界面骨架；原文清单和中间产物不提交
+- [ ] 对照表：键是原文的哈希（空白规范化，带长度），值是译文，放在语言包目录下单独的文件里；翻译走壳文案的补译流程，检查对照本地的原文清单
+- [ ] 引导脚本里的对照表翻译：运行时给页面文字算哈希查表，只换完全相等的文本节点和 `placeholder` / `title` / `aria-label`；MutationObserver 跟着重绘；插件文件不改
+- [ ] 排除对话内容区域（回复、代码块、用户输入、diff）；长段说明文字不翻
+- [ ] 设置开关（默认跟随界面语言），关掉就是原样
+- [ ] 测试：smoke 固定英文；界面测试检查中文下会话列表和输入框提示是中文、对话内容不变
+
+## M4 配置 / CLI / API 接口 / 插件管理：未开始（有零星基础）
+
+设置
+
+- [ ] core 的 settings schema 贡献点：schema = 插件的 `contributes.configuration` + 各 feature 注册的 `ccshell.*`
+- [ ] 在 Monaco 里编辑 settings.json，带 schema 校验，保存后立即生效（现在主题和字体已经能实时生效）
+- [ ] 首次启动可以从 VSCodium 导入 `claudeCode.*` 和编辑器字体设置
+
+CLI 和窗口
+
+- [x] 已有的参数：`[folder]` / `--folder`、`--extension-dir`、`--user-data-dir`、`--theme`、`--log-level`、`--devtools`
+- [ ] 补齐：`--provider`、`--new-window`、`--session`、`--prompt`、`--goto <file:line>`、`--settings`、`--version`、`--help`
+- [ ] 单实例：第二次启动时，参数转发给已经在运行的实例
+- [ ] 标题栏「文件夹 ▾」：切换或打开别的文件夹（开新窗口）；bridge 拦截插件的 `open_folder*`，改走壳的文件夹选择 / 新窗口
+- [ ] 以管理员身份运行的实例用单独的 Chromium 数据目录，但共用配置，写入由 main 串行处理
+- [ ] `window.registerUriHandler` 接到 ccshell:// 协议
+
+API 接口（`features/providers`）
+
+- [ ] 接口配置：`type`（subscription / anthropic-api / compatible / bedrock / vertex / foundry）、`baseUrl`、鉴权方式（apiKey → `ANTHROPIC_API_KEY`，bearer → `ANTHROPIC_AUTH_TOKEN`）、模型映射（主模型，Opus / Sonnet / Haiku / Fable 各档，子代理，模型选择器里显示的 `_NAME` / `_DESCRIPTION`，额外的自定义模型选项）、自定义请求头、超时、最大输出、关闭非必要流量、任意额外环境变量
+- [ ] 切换接口 = 改写传给插件的 `claudeCode.environmentVariables`（加上 `disableLoginPrompt` 和 `CLAUDE_CODE_SKIP_AUTH_LOGIN`）；新开的对话生效，已经打开的对话提示重开
+- [ ] 标题栏「API 接口 ▾」切换；CLI `--provider <id>`；窗口用不同的强调色区分接口
+- [ ] 内置预设（数据文件）：Claude 订阅、Anthropic API、DeepSeek、Kimi、GLM、Qwen…，用户可以增删
+- [ ] 密钥用 Electron `safeStorage`（Windows DPAPI）加密存放，绝不明文写进 settings.json，绝不进安装包
+- [ ] 从 VSCodium 的 DeepSeek 配置档（`profiles\-68229e90`）导入成一个"DeepSeek"接口，导入后密钥立即加密
+- [ ] "为此接口创建快捷方式"（比如 `ccshell.exe --provider deepseek`）
+- [ ] 单元测试：接口生成的环境变量；smoke：切到一个兼容接口，新对话的子进程环境变量正确（只检查环境，不实际调用）
+
+插件管理（脱离 VSCodium）
+
+- [x] 开发时用 `--extension-dir` 指定插件目录（不指定就从 VSCodium 的安装目录找）
+- [ ] 查询 Open VSX → 下载 VSIX → 用 `.sha256` 校验 → 解压 `extension/` 到 `extensions\anthropic.claude-code-<ver>\` → 下次启动时切换过去；保留上一个版本用于回滚
+- [ ] 设置项：自动更新开关、锁定版本；记录"最后一个能正常运行的版本"，新版本激活失败或者没实现的 API 突然变多，就提示回滚
+- [ ] 首次启动：显示下载进度，下完走登录，或者选一个 API 接口
+
+## M5 打包：未开始
+
+- [ ] electron-builder 打 NSIS 安装包：可以选只装当前用户，或装到 Program Files 给所有用户；建开始菜单和桌面快捷方式；卸载时默认保留 `%APPDATA%\ccshell`
+- [ ] 安装包里不含任何 Anthropic 代码（插件首次启动时从 Open VSX 下载）；不出便携版
+- [ ] 全新环境测试：临时 user-data-dir、不依赖 VSCodium、模拟没登录的情况
+- [ ] 装到 Program Files，分别用普通权限和管理员权限运行，再卸载
+
+## M6 名字、图标、视觉打磨：单独讨论
+
+- [ ] 正式名字（不能像官方产品）
+- [ ] 图标
+- [ ] 视觉打磨
+
+## 贯穿各阶段（PLAN 的工程规范）
+
+- [x] TypeScript strict，四套 tsconfig（node 侧 / 网页侧 / preload / 单元测试）
+- [x] 跨进程消息的类型只在 `protocol.ts` 里定义
+- [ ] 运行时校验 IPC 消息的内容（PLAN 写的是用 zod；现在 `ipc.ts` 只检查信封格式）
+- [ ] ESLint + Prettier（还没装）
+- [ ] 每个模块都有单元测试
+  - [x] compat 的 configuration，host 的 bridge 和 webviewDocuments
+  - [x] A 组：platform 的 ipc / event / cancellation，compat 的 types（2026-10-09；写测试时发现并修了 `Event.once`、ipc 发送失败、FileSystemError 名字三处源码问题）
+  - [x] core 的 menus，exthost 的 contributions，compat 的 `window.showInputBox`，platform 的 webviewUrls（2026-10-09，跟右键菜单一起写的）
+  - [ ] 还没有测试的：platform 的 keybindings；core 的 contextKeys / commands / module；compat 的 memento / tabs / commands / webviews；host/main 的 cli / settingsStore / stateStore
+  - [x] 测试文件也做类型检查（`tsconfig.test.json`，2026-10-09；之前 esbuild 只剥类型、不检查）
+- [x] ARCHITECTURE.md、design.md、ADR 0001–0003
+- [x] git，Conventional Commits，每完成一步提交一次
+- [x] 插件私有协议的代码只在 `bridge.ts` 和 `compat/vscode/`，每处注明插件版本（当前 2.1.282）
+
+## 还没排进阶段的（PLAN 里有，但没写归哪个阶段）
+
+- [ ] bridge 拦截 `open_terminal` / `open_claude_in_terminal`，改用 Windows Terminal 打开（现在原样转给插件后端，没做专门处理）

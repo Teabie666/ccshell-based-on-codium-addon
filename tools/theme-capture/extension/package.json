@@ -1,0 +1,10 @@
+{
+  "name": "ccshell-theme-capture",
+  "displayName": "ccshell theme capture (dev tool)",
+  "publisher": "ccshell",
+  "version": "0.0.1",
+  "private": true,
+  "engines": { "vscode": "^1.90.0" },
+  "activationEvents": ["onStartupFinished"],
+  "main": "./extension.js"
+}

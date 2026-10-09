@@ -1,0 +1,18 @@
+node_modules/
+dist/
+out/
+release/
+*.log
+.scratch/
+# Local-only notes, e.g. reverse-engineered details of the extension.
+.local/
+.test-data/
+.test-build/
+tools/theme-capture/.run/
+tools/theme-capture/extension/capture-config.json
+
+# Never commit credentials or local settings.
+.env
+.env.*
+providers.json
+*.key

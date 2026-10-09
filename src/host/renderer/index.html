@@ -1,0 +1,23 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>ccshell</title>
+    <link rel="stylesheet" href="styles.css" />
+    <script src="main.js" defer></script>
+  </head>
+  <body>
+    <header class="titlebar">
+      <div class="titlebar-left" id="titlebar-left"></div>
+      <div class="tabs" id="tabs" role="tablist" aria-label="Open conversations"></div>
+      <div class="titlebar-right" id="titlebar-right"></div>
+      <div class="titlebar-controls-space"></div>
+    </header>
+    <div class="workbench">
+      <aside class="sidebar" id="sidebar" aria-label="Sessions"></aside>
+      <div class="sash" id="sidebar-sash" role="separator" aria-orientation="vertical"></div>
+      <main class="main" id="main"></main>
+    </div>
+    <div class="overlays" id="overlays"></div>
+  </body>
+</html>
