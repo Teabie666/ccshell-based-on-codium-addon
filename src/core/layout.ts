@@ -2,10 +2,11 @@
  * The window's regions:
  *
  *   titlebar: [left items][tabs][right items][native window controls]
- *   workbench: [sidebar | sash | main]
+ *   workbench: [sidebar | sash | main | sash | content pane]
  *   overlays (toasts, quick input, dialogs)
  *
- * Sidebar visibility and width are per-user UI state kept in localStorage.
+ * Visibility and widths of the sidebar and the content pane are per-user UI state kept in
+ * localStorage.
  */
 
 import { Emitter, type Event } from '../platform/event';
@@ -14,10 +15,18 @@ import type { IDisposable } from '../platform/lifecycle';
 const STORAGE_KEY = 'ccshell.layout.v1';
 const SIDEBAR_MIN = 180;
 const SIDEBAR_DEFAULT = 280;
+const CONTENT_MIN = 240;
+/** The conversation keeps at least this much when the content pane grows. */
+const MAIN_MIN = 320;
+/** First time the content pane opens: this share of the window. */
+const CONTENT_DEFAULT_SHARE = 0.45;
 
 interface LayoutState {
   sidebarVisible: boolean;
   sidebarWidth: number;
+  contentVisible: boolean;
+  /** 0 until the pane is first shown. */
+  contentWidth: number;
 }
 
 function element(id: string): HTMLElement {
@@ -36,16 +45,54 @@ export class Layout {
   readonly tabs = element('tabs');
   readonly sidebar = element('sidebar');
   readonly main = element('main');
+  readonly contentPane = element('content-pane');
   readonly overlays = element('overlays');
-  private readonly sash = element('sidebar-sash');
+  private readonly sidebarSash = element('sidebar-sash');
+  private readonly contentSash = element('content-sash');
   private readonly state: LayoutState;
   private readonly sidebarEmitter = new Emitter<boolean>();
   readonly onDidChangeSidebarVisibility: Event<boolean> = this.sidebarEmitter.event;
+  private readonly contentEmitter = new Emitter<boolean>();
+  readonly onDidChangeContentPaneVisibility: Event<boolean> = this.contentEmitter.event;
+  private readonly resizeEmitter = new Emitter<void>();
+  /** The content pane changed size (sash drag, window resize, shown). */
+  readonly onDidResizeContentPane: Event<void> = this.resizeEmitter.event;
 
   constructor() {
     this.state = loadState();
     this.applySidebar();
-    this.installSash();
+    this.applyContent();
+    this.installSash(this.sidebarSash, {
+      get: () => this.state.sidebarWidth,
+      set: (width) => {
+        this.state.sidebarWidth = width;
+        this.sidebar.style.width = `${width}px`;
+      },
+      clamp: (width) => Math.round(Math.min(Math.max(SIDEBAR_MIN, window.innerWidth / 2), Math.max(SIDEBAR_MIN, width))),
+      direction: 1,
+      reset: () => SIDEBAR_DEFAULT,
+    });
+    this.installSash(this.contentSash, {
+      get: () => this.state.contentWidth,
+      set: (width) => {
+        this.state.contentWidth = width;
+        this.contentPane.style.width = `${width}px`;
+        this.resizeEmitter.fire();
+      },
+      clamp: (width) => this.clampContentWidth(width),
+      direction: -1,
+      reset: () => this.defaultContentWidth(),
+    });
+    window.addEventListener('resize', () => {
+      if (this.state.contentVisible) {
+        const clamped = this.clampContentWidth(this.state.contentWidth);
+        if (clamped !== this.state.contentWidth) {
+          this.state.contentWidth = clamped;
+          this.contentPane.style.width = `${clamped}px`;
+        }
+        this.resizeEmitter.fire();
+      }
+    });
   }
 
   get sidebarVisible(): boolean {
@@ -66,6 +113,27 @@ export class Layout {
     this.setSidebarVisible(!this.state.sidebarVisible);
   }
 
+  get contentPaneVisible(): boolean {
+    return this.state.contentVisible;
+  }
+
+  setContentPaneVisible(visible: boolean): void {
+    if (visible === this.state.contentVisible) {
+      return;
+    }
+    this.state.contentVisible = visible;
+    this.applyContent();
+    saveState(this.state);
+    this.contentEmitter.fire(visible);
+    if (visible) {
+      this.resizeEmitter.fire();
+    }
+  }
+
+  toggleContentPane(): void {
+    this.setContentPaneVisible(!this.state.contentVisible);
+  }
+
   /** Adds an element to the title bar; lower `order` sits further left. */
   addTitleBarItem(side: TitleBarSide, item: HTMLElement, order = 0): IDisposable {
     const container = side === 'left' ? this.titleBarLeft : this.titleBarRight;
@@ -77,49 +145,81 @@ export class Layout {
 
   private applySidebar(): void {
     this.sidebar.hidden = !this.state.sidebarVisible;
-    this.sash.hidden = !this.state.sidebarVisible;
+    this.sidebarSash.hidden = !this.state.sidebarVisible;
     this.sidebar.style.width = `${this.state.sidebarWidth}px`;
     document.body.classList.toggle('sidebar-visible', this.state.sidebarVisible);
   }
 
-  private installSash(): void {
-    this.sash.addEventListener('pointerdown', (start) => {
+  private applyContent(): void {
+    const visible = this.state.contentVisible;
+    if (visible && this.state.contentWidth === 0) {
+      this.state.contentWidth = this.defaultContentWidth();
+    }
+    this.contentPane.hidden = !visible;
+    this.contentSash.hidden = !visible;
+    this.contentPane.style.width = `${this.clampContentWidth(this.state.contentWidth)}px`;
+    document.body.classList.toggle('content-pane-visible', visible);
+  }
+
+  private defaultContentWidth(): number {
+    return this.clampContentWidth(Math.round(window.innerWidth * CONTENT_DEFAULT_SHARE));
+  }
+
+  private clampContentWidth(width: number): number {
+    const sidebar = this.state.sidebarVisible ? this.state.sidebarWidth : 0;
+    const max = Math.max(CONTENT_MIN, window.innerWidth - sidebar - MAIN_MIN);
+    return Math.round(Math.min(max, Math.max(CONTENT_MIN, width)));
+  }
+
+  /** `direction` 1: dragging right grows the region (sidebar); -1: dragging left does (content pane). */
+  private installSash(
+    sash: HTMLElement,
+    region: {
+      get(): number;
+      set(width: number): void;
+      clamp(width: number): number;
+      direction: 1 | -1;
+      reset(): number;
+    },
+  ): void {
+    sash.addEventListener('pointerdown', (start) => {
       start.preventDefault();
-      this.sash.setPointerCapture(start.pointerId);
+      sash.setPointerCapture(start.pointerId);
       // iframes swallow pointer events; disable them while dragging.
       document.body.classList.add('resizing');
-      const initialWidth = this.state.sidebarWidth;
+      const initialWidth = region.get();
       const onMove = (move: PointerEvent): void => {
-        const max = Math.max(SIDEBAR_MIN, window.innerWidth / 2);
-        this.state.sidebarWidth = Math.round(Math.min(max, Math.max(SIDEBAR_MIN, initialWidth + move.clientX - start.clientX)));
-        this.sidebar.style.width = `${this.state.sidebarWidth}px`;
+        region.set(region.clamp(initialWidth + region.direction * (move.clientX - start.clientX)));
       };
       const onUp = (): void => {
         document.body.classList.remove('resizing');
-        this.sash.removeEventListener('pointermove', onMove);
-        this.sash.removeEventListener('pointerup', onUp);
+        sash.removeEventListener('pointermove', onMove);
+        sash.removeEventListener('pointerup', onUp);
         saveState(this.state);
       };
-      this.sash.addEventListener('pointermove', onMove);
-      this.sash.addEventListener('pointerup', onUp);
+      sash.addEventListener('pointermove', onMove);
+      sash.addEventListener('pointerup', onUp);
     });
-    this.sash.addEventListener('dblclick', () => {
-      this.state.sidebarWidth = SIDEBAR_DEFAULT;
-      this.applySidebar();
+    sash.addEventListener('dblclick', () => {
+      region.set(region.clamp(region.reset()));
       saveState(this.state);
     });
   }
 }
 
 function loadState(): LayoutState {
+  const defaults: LayoutState = { sidebarVisible: true, sidebarWidth: SIDEBAR_DEFAULT, contentVisible: false, contentWidth: 0 };
   try {
     const parsed = JSON.parse(localStorage.getItem(STORAGE_KEY) ?? '{}') as Partial<LayoutState>;
     return {
-      sidebarVisible: parsed.sidebarVisible ?? true,
+      sidebarVisible: parsed.sidebarVisible ?? defaults.sidebarVisible,
       sidebarWidth: typeof parsed.sidebarWidth === 'number' ? Math.max(SIDEBAR_MIN, parsed.sidebarWidth) : SIDEBAR_DEFAULT,
+      // The pane opens when something is shown in it; at startup it is empty.
+      contentVisible: false,
+      contentWidth: typeof parsed.contentWidth === 'number' ? Math.max(0, parsed.contentWidth) : 0,
     };
   } catch {
-    return { sidebarVisible: true, sidebarWidth: SIDEBAR_DEFAULT };
+    return defaults;
   }
 }
 

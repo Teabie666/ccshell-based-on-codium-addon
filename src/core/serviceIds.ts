@@ -6,11 +6,13 @@
 import type { CommandService } from './commands';
 import type { ContextKeyService } from './contextKeys';
 import type { Dialogs } from './dialogs';
+import type { EditorRegistry } from './editors';
 import type { ExtensionHostConnection } from './extensionHost';
 import type { KeybindingService } from './keybindings';
 import type { Layout } from './layout';
 import type { MenuService } from './menus';
 import type { NativeApi } from './native';
+import type { PanelRouter } from './panels';
 import { createServiceId } from './services';
 import type { ThemeService } from './themes';
 import type { WebviewFrames } from './webviewFrames';
@@ -32,3 +34,5 @@ export const IExtensionHost = createServiceId<ExtensionHostConnection>('extensio
 export const INative = createServiceId<NativeApi>('native');
 export const IThemes = createServiceId<ThemeService>('themes');
 export const IWorkspace = createServiceId<WorkspaceInfo>('workspace');
+export const IEditors = createServiceId<EditorRegistry>('editors');
+export const IPanels = createServiceId<PanelRouter>('panels');

@@ -11,6 +11,7 @@ import {
   IExtensionHost,
   IKeybindings,
   ILayout,
+  IPanels,
   IThemes,
   IWebviewFrames,
 } from '../../core/serviceIds';
@@ -64,14 +65,14 @@ export const conversationsModule: ShellModule = {
     subscriptions.add(themes.onDidChange(() => tabs.refreshIcons()));
 
     subscriptions.add(
-      connection.onDidConnect((rpc) => {
-        rpc.handle('panel.create', (params) => tabs.create(params));
-        rpc.handle('panel.update', (params) => tabs.update(params));
-        rpc.handle('panel.reveal', ({ panelId, preserveFocus }) => tabs.reveal(panelId, preserveFocus));
-        rpc.handle('panel.dispose', ({ panelId }) => tabs.remove(panelId));
-        updateContext();
+      services.get(IPanels).registerHost('main', {
+        create: (params) => tabs.create(params),
+        update: (params) => tabs.update(params),
+        reveal: (panelId, preserveFocus) => tabs.reveal(panelId, preserveFocus),
+        remove: (panelId) => tabs.remove(panelId),
       }),
     );
+    subscriptions.add(connection.onDidConnect(() => updateContext()));
     subscriptions.add(
       connection.onDidDisconnect(() => {
         tabs.clear();

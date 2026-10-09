@@ -13,12 +13,13 @@ import { Emitter, Event } from '../../platform/event';
 import { createStubPrototype, withStubs } from './catchAll';
 import { CommandRegistry } from './commands';
 import { ConfigurationService, defaultsFromPackageJson } from './configuration';
+import { EditorService } from './editors';
 import { createExtensionObject, type ExtensionObject } from './extensionContext';
 import { FileSystemService } from './fileSystem';
 import type { CompatHost } from './host';
 import type { OutputChannelImpl } from './outputChannels';
 import { TabGroupsModel } from './tabs';
-import { TextDocuments, type TextDocumentImpl } from './textDocuments';
+import { TextDocuments } from './textDocuments';
 import * as types from './types';
 import { Uri } from './uri';
 import { WebviewManager } from './webviews';
@@ -30,7 +31,6 @@ export class EventEmitter<T> extends Emitter<T> {}
 
 export interface CompatHooks {
   readonly onShowOutput: (channel: OutputChannelImpl) => void;
-  readonly onShowDocument: (document: TextDocumentImpl, options: vscode.TextDocumentShowOptions) => void;
 }
 
 /** Internals the extension host needs (to open panels, restore them, intercept messages...). */
@@ -40,6 +40,7 @@ export interface CompatServices {
   readonly tabs: TabGroupsModel;
   readonly webviews: WebviewManager;
   readonly documents: TextDocuments;
+  readonly editors: EditorService;
   readonly fileSystem: FileSystemService;
   readonly uriHandlers: Set<vscode.UriHandler>;
   /** Set once the extension module is loaded, so `extensions.getExtension(...).exports` works. */
@@ -50,6 +51,31 @@ export interface CompatServices {
 export interface CompatApi {
   readonly api: object;
   readonly services: CompatServices;
+}
+
+function showOptionsFrom(value: unknown): vscode.TextDocumentShowOptions {
+  if (typeof value === 'object' && value !== null) {
+    return value as vscode.TextDocumentShowOptions;
+  }
+  return {};
+}
+
+/** Built-in commands that open editors: `vscode.open` and `vscode.diff`. */
+function registerEditorCommands(commands: CommandRegistry, documents: TextDocuments, editors: EditorService, host: CompatHost): void {
+  commands.registerBuiltin('vscode.open', async (resource, columnOrOptions) => {
+    const uri = typeof resource === 'string' ? Uri.parse(resource) : (resource as vscode.Uri);
+    if (uri.scheme === 'http' || uri.scheme === 'https' || uri.scheme === 'mailto') {
+      await host.os.openExternal(uri.toString(true));
+      return;
+    }
+    const document = await documents.open(uri);
+    await editors.showTextDocument(document, showOptionsFrom(columnOrOptions));
+  });
+  commands.registerBuiltin('vscode.diff', async (left, right, title, options) => {
+    const [original, modified] = await Promise.all([documents.open(left as vscode.Uri), documents.open(right as vscode.Uri)]);
+    const label = typeof title === 'string' && title ? title : `${original.fileName} ↔ ${modified.fileName}`;
+    await editors.openDiff(original, modified, label, showOptionsFrom(options));
+  });
 }
 
 function formatL10n(message: string, args: readonly unknown[]): string {
@@ -68,8 +94,10 @@ export function createVSCodeApi(host: CompatHost, hooks: CompatHooks): CompatApi
   const tabs = new TabGroupsModel();
   const webviews = new WebviewManager(host, tabs);
   const fileSystem = new FileSystemService(host.workspaceFolders);
-  const documents = new TextDocuments(fileSystem);
+  const documents = new TextDocuments(fileSystem, host.documents);
+  const editors = new EditorService(host.editors, tabs, documents, host.logger.child('editors'));
   const uriHandlers = new Set<vscode.UriHandler>();
+  registerEditorCommands(commands, documents, editors, host);
 
   let extensionExports: unknown;
   const extensionObject = createExtensionObject(host, () => extensionExports);
@@ -80,8 +108,8 @@ export function createVSCodeApi(host: CompatHost, hooks: CompatHooks): CompatApi
     tabs,
     webviews,
     documents,
+    editors,
     onShowOutput: hooks.onShowOutput,
-    onShowDocument: hooks.onShowDocument,
     uriHandlers,
   });
   const workspace = createWorkspaceNamespace({ host, configuration, fileSystem, documents });
@@ -197,6 +225,7 @@ export function createVSCodeApi(host: CompatHost, hooks: CompatHooks): CompatApi
       tabs,
       webviews,
       documents,
+      editors,
       fileSystem,
       uriHandlers,
       extensionObject,

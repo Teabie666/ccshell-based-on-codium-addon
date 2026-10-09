@@ -21,6 +21,7 @@ function inputBoxWithAnswers(answers: (string | undefined)[]): { showInputBox: S
       },
     },
     documents: {},
+    editors: {},
   } as unknown as WindowDependencies;
   const window = createWindowNamespace(deps) as { showInputBox: ShowInputBox };
   return { showInputBox: window.showInputBox, requests };

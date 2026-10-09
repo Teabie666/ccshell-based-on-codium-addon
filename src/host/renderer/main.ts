@@ -8,6 +8,7 @@ import { t } from '../../core/messages';
 import type { ShellModule } from '../../core/module';
 import { startWorkbench } from '../../core/workbench';
 import { commandPaletteModule } from '../../features/commandPalette';
+import { contentPaneModule } from '../../features/contentPane';
 import { conversationsModule } from '../../features/conversations';
 import { extensionHostStatusModule } from '../../features/extensionHostStatus';
 import { extensionMenusModule } from '../../features/extensionMenus';
@@ -19,6 +20,7 @@ import { windowModule } from '../../features/window';
 const modules: ShellModule[] = [
   windowModule,
   conversationsModule,
+  contentPaneModule,
   sessionsModule,
   themesModule,
   languageModule,

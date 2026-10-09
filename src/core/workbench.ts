@@ -10,6 +10,7 @@ import { htmlLang, setUiLanguage } from '../platform/nls';
 import { CommandService } from './commands';
 import { ContextKeyService } from './contextKeys';
 import { Dialogs } from './dialogs';
+import { EditorRegistry } from './editors';
 import { ExtensionHostConnection } from './extensionHost';
 import { KeybindingService } from './keybindings';
 import { Layout } from './layout';
@@ -18,15 +19,18 @@ import { MenuService } from './menus';
 import { t } from './messages';
 import { ModuleHost, type ShellModule } from './module';
 import { native } from './native';
+import { PanelRouter } from './panels';
 import {
   ICommands,
   IContextKeys,
   IDialogs,
+  IEditors,
   IExtensionHost,
   IKeybindings,
   ILayout,
   IMenus,
   INative,
+  IPanels,
   IThemes,
   IWebviewFrames,
   IWorkspace,
@@ -79,6 +83,8 @@ export async function startWorkbench(modules: readonly ShellModule[]): Promise<v
   services.register(IDialogs, dialogs);
   services.register(IExtensionHost, connection);
   services.register(IWorkspace, { folders: init.workspaceFolders, name: folder.split(/[\\/]/).pop() || folder });
+  services.register(IEditors, new EditorRegistry());
+  services.register(IPanels, new PanelRouter(connection, logger.child('panels')));
 
   // Core RPC handlers: webview plumbing and the extension's message/picker UI.
   connection.onDidConnect((rpc) => {

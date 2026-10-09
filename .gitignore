@@ -16,3 +16,6 @@ tools/theme-capture/extension/capture-config.json
 .env.*
 providers.json
 *.key
+
+# Session-to-session working notes.
+HANDOFF.md

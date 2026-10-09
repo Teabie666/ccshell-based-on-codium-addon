@@ -12,7 +12,7 @@ import { Emitter, type Event } from '../../platform/event';
 import { generateId } from '../../platform/ids';
 import type { IDisposable } from '../../platform/lifecycle';
 import type { ILogger } from '../../platform/log';
-import type { IconPathDto } from '../../platform/protocol';
+import type { IconPathDto, PanelArea } from '../../platform/protocol';
 import {
   WEBVIEW_CSP_SOURCE,
   WEBVIEW_ID_PREFIX,
@@ -126,6 +126,7 @@ export class WebviewPanelImpl implements vscode.WebviewPanel {
     readonly id: string,
     readonly viewType: string,
     title: string,
+    readonly area: PanelArea,
     readonly webview: WebviewImpl,
     readonly options: vscode.WebviewPanelOptions,
     private readonly backend: WebviewBackend,
@@ -134,7 +135,7 @@ export class WebviewPanelImpl implements vscode.WebviewPanel {
   ) {
     this.titleValue = title;
     // VS Code reports panel tabs with this viewType prefix; the extension matches on it.
-    this.tab = tabs.add(title, new TabInputWebview(`mainThreadWebview-${viewType}`), () => this.dispose());
+    this.tab = tabs.add(area, title, new TabInputWebview(`mainThreadWebview-${viewType}`), () => this.dispose());
   }
 
   get title(): string {
@@ -157,7 +158,7 @@ export class WebviewPanelImpl implements vscode.WebviewPanel {
   }
 
   get viewColumn(): vscode.ViewColumn {
-    return ViewColumn.One as unknown as vscode.ViewColumn;
+    return this.tab.group.viewColumn as unknown as vscode.ViewColumn;
   }
 
   get active(): boolean {
@@ -298,6 +299,23 @@ interface ShowOptions {
   readonly preserveFocus?: boolean;
 }
 
+/** The chat panel's viewType (anthropic.claude-code 2.1.282): always the conversation area. */
+const CHAT_PANEL_VIEW_TYPE = 'claudeVSCodePanel';
+
+/**
+ * The first editor column is the conversation area; any column beside it is the content
+ * pane. The extension opens its plan preview at "chat column + 1", which lands it there.
+ */
+export function panelAreaFor(viewType: string, showOptions: vscode.ViewColumn | ShowOptions | undefined): PanelArea {
+  if (viewType === CHAT_PANEL_VIEW_TYPE) {
+    return 'main';
+  }
+  const column = typeof showOptions === 'object' ? showOptions.viewColumn : showOptions;
+  return (column as number | undefined) === ViewColumn.Beside || ((column as number | undefined) ?? 0) >= ViewColumn.Two
+    ? 'side'
+    : 'main';
+}
+
 export class WebviewManager implements IDisposable {
   private readonly panels = new Map<string, WebviewPanelImpl>();
   /** Resolved views, by viewType (each view type is shown at most once). */
@@ -398,6 +416,7 @@ export class WebviewManager implements IDisposable {
     const panelId = generateId('panel');
     const webviewId = generateId(WEBVIEW_ID_PREFIX);
     const preserveFocus = typeof showOptions === 'object' && showOptions.preserveFocus === true;
+    const area = panelAreaFor(viewType, showOptions);
     const webview = new WebviewImpl(
       webviewId,
       viewType,
@@ -411,6 +430,7 @@ export class WebviewManager implements IDisposable {
       panelId,
       viewType,
       title,
+      area,
       webview,
       options,
       this.host.webviews,
@@ -428,6 +448,7 @@ export class WebviewManager implements IDisposable {
       webviewId,
       viewType,
       title,
+      area,
       preserveFocus,
       retainContextWhenHidden: options.retainContextWhenHidden === true,
       enableFindWidget: options.enableFindWidget === true,

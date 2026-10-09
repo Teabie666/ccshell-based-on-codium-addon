@@ -85,11 +85,18 @@ export interface IconPathDto {
   readonly dark: string;
 }
 
+/**
+ * Where a webview panel is shown: `main` is the conversation area (VS Code's first editor
+ * column), `side` the content pane (any column beside it).
+ */
+export type PanelArea = 'main' | 'side';
+
 export interface PanelCreateParams {
   readonly panelId: string;
   readonly webviewId: string;
   readonly viewType: string;
   readonly title: string;
+  readonly area: PanelArea;
   readonly iconPath?: IconPathDto;
   readonly preserveFocus: boolean;
   readonly retainContextWhenHidden: boolean;
@@ -182,6 +189,76 @@ export interface ContextMenuItemDto {
   readonly label: string;
 }
 
+// ---- documents and editors (the content pane) ----
+//
+// Documents shown in an editor ("attached") are owned by the renderer's text model: the
+// extension host mirrors them from `document.didChange`, and asks the renderer to apply
+// its own edits. See docs/ARCHITECTURE.md ("文档和编辑器").
+
+/** 0-based, like `vscode.Position`. */
+export interface PositionDto {
+  readonly line: number;
+  readonly character: number;
+}
+
+export interface RangeDto {
+  readonly start: PositionDto;
+  readonly end: PositionDto;
+}
+
+export interface SelectionDto {
+  readonly anchor: PositionDto;
+  readonly active: PositionDto;
+}
+
+export interface DocumentSnapshot {
+  /** `vscode.Uri.toString()`: the document's identity on both sides. */
+  readonly uri: string;
+  /** `fsPath` for file URIs, else the URI path; for labels and tooltips. */
+  readonly path: string;
+  readonly text: string;
+  readonly languageId: string;
+  readonly isDirty: boolean;
+  readonly readOnly: boolean;
+}
+
+/** One change of a `document.didChange`, against the text before that event. */
+export interface TextChangeDto {
+  readonly range: RangeDto;
+  readonly rangeOffset: number;
+  readonly rangeLength: number;
+  readonly text: string;
+}
+
+export interface TextEditDto {
+  readonly range: RangeDto;
+  readonly text: string;
+}
+
+/** `vscode.TextEditorRevealType`, by name. */
+export type RevealType = 'default' | 'center' | 'centerIfOutside' | 'top';
+
+export interface ShowTextEditorParams {
+  /** The tab and editor ids the extension host assigned (`TabImpl`, `TextEditor`). */
+  readonly tabId: string;
+  readonly editorId: string;
+  readonly document: DocumentSnapshot;
+  readonly preserveFocus: boolean;
+  /** A preview tab is replaced by the next preview, until it is edited or pinned. */
+  readonly preview: boolean;
+  readonly selection?: RangeDto;
+}
+
+export interface ShowDiffEditorParams {
+  readonly tabId: string;
+  readonly title: string;
+  readonly original: DocumentSnapshot;
+  readonly modified: DocumentSnapshot;
+  readonly originalEditorId: string;
+  readonly modifiedEditorId: string;
+  readonly preserveFocus: boolean;
+}
+
 export interface RendererInitData {
   readonly theme: ThemeData;
   readonly workspaceFolders: readonly string[];
@@ -239,6 +316,33 @@ export type ExtHostApiForRenderer = {
   'commands.execute': (p: { id: string; args: readonly unknown[] }) => unknown;
   /** Read from the manifest, so it does not wait for activation. */
   'extension.contributions': (p: void) => ExtensionContributions;
+
+  // ---- documents and editors ----
+  /** The shell opens a file (quick open, drop...); answered by `editor.showText`. False if it cannot be read. */
+  'documents.show': (p: { uri: string; preserveFocus: boolean; preview: boolean; selection?: RangeDto }) => boolean;
+  /** Workspace files for quick open, relative to the first folder with `/` separators. */
+  'documents.listFiles': (p: { maxResults: number }) => string[];
+  'document.didChange': (p: {
+    uri: string;
+    changes: readonly TextChangeDto[];
+    isUndoing: boolean;
+    isRedoing: boolean;
+  }) => void;
+  'document.didChangeDirty': (p: { uri: string; isDirty: boolean }) => void;
+  /** Saves the attached document (fires will-save and did-save). False when it cannot be saved. */
+  'document.save': (p: { uri: string }) => boolean;
+  /** Discards unsaved changes: answered by `document.reload` with the text on disk. */
+  'document.revert': (p: { uri: string }) => void;
+  'editor.didChangeSelection': (p: { editorId: string; selections: readonly SelectionDto[] }) => void;
+  /**
+   * Which editors the user sees: `visible` are the editors of the active content tab while
+   * the content pane is shown, `active` the one among them that takes input.
+   */
+  'editor.didChangeVisible': (p: { active: string | undefined; visible: readonly string[] }) => void;
+  /** A content tab became the active one (also makes its tab group the active group). */
+  'tab.didActivate': (p: { tabId: string }) => void;
+  /** The user closed a text or diff tab. */
+  'tab.didClose': (p: { tabId: string }) => void;
 };
 
 /** Served by the renderer, called by the extension host. */
@@ -258,6 +362,23 @@ export type RendererApiForExtHost = {
   /** Resolves to the indexes of the chosen items, or undefined if dismissed. */
   'ui.showQuickPick': (p: QuickPickRequest) => number[] | undefined;
   'ui.showInputBox': (p: InputBoxRequest) => string | undefined;
+
+  // ---- documents and editors ----
+  /** Opens (or activates) a text tab in the content pane. */
+  'editor.showText': (p: ShowTextEditorParams) => void;
+  'editor.showDiff': (p: ShowDiffEditorParams) => void;
+  'editor.setSelections': (p: { editorId: string; selections: readonly SelectionDto[] }) => void;
+  'editor.revealRange': (p: { editorId: string; range: RangeDto; revealType: RevealType }) => void;
+  /** The extension closed a content tab (`tabGroups.close`). */
+  'tab.close': (p: { tabId: string }) => void;
+  /** Applies edits to an attached document; they come back as `document.didChange`. */
+  'document.applyEdits': (p: { uri: string; edits: readonly TextEditDto[] }) => boolean;
+  /** Replaces an attached document's text with what is on disk and marks it saved. */
+  'document.reload': (p: { uri: string; text: string }) => void;
+  /** An attached document was saved (also when the extension saved it). */
+  'document.didSave': (p: { uri: string }) => void;
+  /** An attached document with unsaved changes changed on disk. */
+  'document.didChangeOnDisk': (p: { uri: string }) => void;
 };
 
 // ---------------------------------------------------------------------------

@@ -4,7 +4,7 @@
     <meta charset="utf-8" />
     <title>ccshell</title>
     <link rel="stylesheet" href="styles.css" />
-    <script src="main.js" defer></script>
+    <script type="module" src="main.js"></script>
   </head>
   <body>
     <header class="titlebar">
@@ -17,6 +17,8 @@
       <aside class="sidebar" id="sidebar" aria-label="Sessions"></aside>
       <div class="sash" id="sidebar-sash" role="separator" aria-orientation="vertical"></div>
       <main class="main" id="main"></main>
+      <div class="sash" id="content-sash" role="separator" aria-orientation="vertical"></div>
+      <section class="content-pane" id="content-pane"></section>
     </div>
     <div class="overlays" id="overlays"></div>
   </body>

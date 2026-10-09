@@ -5,11 +5,12 @@ import { CancellationTokenSource } from '../../platform/cancellation';
 import { Emitter, Event } from '../../platform/event';
 import type { MessageSeverity, QuickPickItemDto } from '../../platform/protocol';
 import type { CommandRegistry } from './commands';
+import type { EditorService } from './editors';
 import type { CompatHost } from './host';
 import { OutputChannelImpl, asVsCodeChannel } from './outputChannels';
 import type { TabGroupsModel } from './tabs';
 import type { TextDocumentImpl, TextDocuments } from './textDocuments';
-import { ColorThemeKind, Disposable, Selection, StatusBarAlignment, ViewColumn } from './types';
+import { ColorThemeKind, Disposable, StatusBarAlignment } from './types';
 import { Uri } from './uri';
 import type { WebviewManager } from './webviews';
 
@@ -19,10 +20,9 @@ export interface WindowDependencies {
   readonly tabs: TabGroupsModel;
   readonly webviews: WebviewManager;
   readonly documents: TextDocuments;
-  /** Where `outputChannel.show()` goes; M1 opens the log in the content pane. */
+  readonly editors: EditorService;
+  /** Where `outputChannel.show()` goes (the log opens in the content pane). */
   readonly onShowOutput: (channel: OutputChannelImpl) => void;
-  /** Where `showTextDocument` goes; M2 opens a Monaco tab. */
-  readonly onShowDocument: (document: TextDocumentImpl, options: vscode.TextDocumentShowOptions) => void;
   /** Handlers from `window.registerUriHandler` (wired to the ccshell:// protocol in M4). */
   readonly uriHandlers: Set<vscode.UriHandler>;
 }
@@ -65,27 +65,8 @@ function blockingValidationMessage(result: string | vscode.InputBoxValidationMes
   return undefined;
 }
 
-/** A TextEditor handle. M0 has no real editor; M2 replaces this with Monaco-backed editors. */
-function createEditorHandle(document: TextDocumentImpl): vscode.TextEditor {
-  const selection = new Selection(0, 0, 0, 0);
-  return {
-    document,
-    selection,
-    selections: [selection],
-    visibleRanges: [],
-    options: { tabSize: 4, insertSpaces: true },
-    viewColumn: ViewColumn.One,
-    edit: () => Promise.resolve(false),
-    insertSnippet: () => Promise.resolve(false),
-    setDecorations: () => {},
-    revealRange: () => {},
-    show: () => {},
-    hide: () => {},
-  } as unknown as vscode.TextEditor;
-}
-
 export function createWindowNamespace(deps: WindowDependencies): Record<string, unknown> {
-  const { host, documents } = deps;
+  const { host, documents, editors } = deps;
 
   const showMessage = async (severity: MessageSeverity, message: unknown, args: readonly unknown[]) => {
     const { options, items } = splitMessageArgs(args);
@@ -103,9 +84,6 @@ export function createWindowNamespace(deps: WindowDependencies): Record<string, 
     return options.modal ? items.find((item) => typeof item === 'object' && item.isCloseAffordance) : undefined;
   };
 
-  const activeEditorEmitter = new Emitter<vscode.TextEditor | undefined>();
-  const selectionEmitter = new Emitter<vscode.TextEditorSelectionChangeEvent>();
-  const visibleEditorsEmitter = new Emitter<readonly vscode.TextEditor[]>();
   const windowStateEmitter = new Emitter<vscode.WindowState>();
   const themeEmitter = new Emitter<vscode.ColorTheme>();
   const themeKind =
@@ -213,28 +191,29 @@ export function createWindowNamespace(deps: WindowDependencies): Record<string, 
       deps.webviews.registerSerializer(viewType, serializer),
     tabGroups: deps.tabs,
 
-    // ---- text editors (M2 binds these to Monaco) ----
+    // ---- text editors (the content pane) ----
     get activeTextEditor() {
-      return undefined;
+      return editors.activeTextEditor;
     },
     get visibleTextEditors() {
-      return [];
+      return editors.visibleTextEditors;
     },
-    onDidChangeActiveTextEditor: activeEditorEmitter.event,
-    onDidChangeVisibleTextEditors: visibleEditorsEmitter.event,
-    onDidChangeTextEditorSelection: selectionEmitter.event,
+    onDidChangeActiveTextEditor: editors.onDidChangeActiveTextEditor,
+    onDidChangeVisibleTextEditors: editors.onDidChangeVisibleTextEditors,
+    onDidChangeTextEditorSelection: editors.onDidChangeTextEditorSelection,
     onDidChangeTextEditorVisibleRanges: Event.None,
     onDidChangeTextEditorOptions: Event.None,
     onDidChangeTextEditorViewColumn: Event.None,
     showTextDocument: async (
       documentOrUri: vscode.TextDocument | vscode.Uri,
       columnOrOptions?: vscode.ViewColumn | vscode.TextDocumentShowOptions,
+      preserveFocus?: boolean,
     ) => {
       const document =
         documentOrUri instanceof Uri ? await documents.open(documentOrUri) : (documentOrUri as unknown as TextDocumentImpl);
-      const options = typeof columnOrOptions === 'object' ? columnOrOptions : {};
-      deps.onShowDocument(document, options);
-      return createEditorHandle(document);
+      const options: vscode.TextDocumentShowOptions =
+        typeof columnOrOptions === 'object' ? columnOrOptions : { preserveFocus: preserveFocus === true };
+      return editors.showTextDocument(document, options);
     },
     createTextEditorDecorationType: () => ({ key: `decoration-${Math.random().toString(36).slice(2)}`, dispose: () => {} }),
 

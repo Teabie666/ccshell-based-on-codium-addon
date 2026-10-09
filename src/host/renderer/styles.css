@@ -11,6 +11,8 @@
   /* Icons are masks filled with currentColor, so they follow the theme. */
   --icon-close: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M8 8.707l3.646 3.647.708-.707L8.707 8l3.647-3.646-.707-.708L8 7.293 4.354 3.646l-.707.708L7.293 8l-3.646 3.646.707.708L8 8.707z'/%3E%3C/svg%3E");
   --icon-sidebar: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M2 2h12v12H2V2zm1 1v10h3V3H3zm4 0v10h6V3H7z'/%3E%3C/svg%3E");
+  --icon-content-pane: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M2 2h12v12H2V2zm1 1v10h6V3H3zm7 0v10h3V3h-3z'/%3E%3C/svg%3E");
+  --icon-dirty: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Ccircle cx='8' cy='8' r='4'/%3E%3C/svg%3E");
   --icon-arrow-up: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M8 3.5l4.854 4.854-.708.707L8.5 5.414V13h-1V5.414L3.854 9.06l-.708-.707L8 3.5z'/%3E%3C/svg%3E");
   --icon-arrow-down: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M8 12.5L3.146 7.646l.708-.707L7.5 10.586V3h1v7.586l3.646-3.647.708.707L8 12.5z'/%3E%3C/svg%3E");
   --icon-case: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M7.495 9.052L8.386 11.402H9.477L6.237 3H5.217L2 11.402H3.095L3.933 9.052H7.495ZM5.811 4.453L5.855 4.588L7.173 8.162H4.255L5.562 4.588L5.606 4.453L5.644 4.297L5.676 4.145L5.697 4.019H5.72L5.744 4.145L5.773 4.297L5.811 4.453ZM13.795 10.464V11.4H14.755V7.498C14.755 6.779 14.575 6.226 14.216 5.837C13.857 5.448 13.327 5.254 12.628 5.254C12.429 5.254 12.227 5.273 12.022 5.31C11.817 5.347 11.622 5.395 11.437 5.455C11.252 5.515 11.083 5.579 10.93 5.648C10.777 5.717 10.656 5.784 10.567 5.85V6.86C10.788 6.668 11.042 6.517 11.329 6.405C11.616 6.293 11.913 6.237 12.22 6.237C12.374 6.237 12.517 6.262 12.649 6.313C12.781 6.364 12.894 6.443 12.988 6.551C13.082 6.659 13.155 6.8 13.207 6.973C13.259 7.146 13.285 7.355 13.285 7.6L11.637 7.825C11.36 7.862 11.106 7.932 10.875 8.034C10.644 8.136 10.444 8.267 10.275 8.427C10.106 8.587 9.976 8.776 9.884 8.995C9.792 9.214 9.746 9.459 9.746 9.73C9.746 9.956 9.783 10.167 9.857 10.363C9.931 10.559 10.04 10.729 10.183 10.873C10.326 11.017 10.502 11.13 10.711 11.212C10.92 11.294 11.159 11.335 11.428 11.335C11.794 11.335 12.131 11.245 12.439 11.065C12.747 10.885 13.017 10.651 13.249 10.364H13.271L13.795 10.464ZM13.285 8.528V8.903C13.285 9.13 13.247 9.339 13.171 9.531C13.095 9.723 12.99 9.889 12.857 10.03C12.724 10.171 12.567 10.281 12.386 10.36C12.205 10.439 12.009 10.479 11.798 10.479C11.651 10.479 11.519 10.459 11.402 10.418C11.285 10.377 11.187 10.32 11.106 10.246C11.025 10.172 10.963 10.083 10.92 9.98C10.877 9.877 10.856 9.763 10.856 9.638C10.856 9.484 10.881 9.349 10.932 9.233C10.983 9.117 11.058 9.019 11.157 8.939C11.256 8.859 11.38 8.795 11.528 8.745C11.676 8.695 11.849 8.656 12.047 8.629L13.285 8.528Z'/%3E%3C/svg%3E");
@@ -99,6 +101,10 @@ kbd {
 
 .icon-sidebar {
   --icon: var(--icon-sidebar);
+}
+
+.icon-content-pane {
+  --icon: var(--icon-content-pane);
 }
 
 .icon-arrow-up {
@@ -291,6 +297,66 @@ body.resizing {
   height: 100%;
   border: 0;
   background: transparent;
+}
+
+/* ---- content pane: editor tabs and editors --------------------------------- */
+
+.content-pane {
+  display: flex;
+  flex-direction: column;
+  flex: none;
+  min-width: 240px;
+  background: var(--vscode-editor-background);
+  border-left: 1px solid var(--vscode-editorGroup-border, var(--vscode-panel-border, transparent));
+}
+
+.content-tabs {
+  display: flex;
+  flex: 0 0 35px;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: none;
+  background: var(--vscode-editorGroupHeader-tabsBackground);
+  border-bottom: 1px solid var(--vscode-editorGroupHeader-tabsBorder, transparent);
+}
+
+.content-tab:first-child {
+  border-left: none;
+}
+
+.content-tab.preview .tab-label {
+  font-style: italic;
+}
+
+.tab-description {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.9em;
+  opacity: 0.7;
+}
+
+/* Unsaved changes: a dot in place of the close button, the close button on hover. */
+.content-tab.dirty .tab-close {
+  visibility: visible;
+  --icon: var(--icon-dirty);
+}
+
+.content-tab.dirty .tab-close:hover {
+  --icon: var(--icon-close);
+}
+
+.content-body {
+  position: relative;
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+.content-editor {
+  position: absolute;
+  inset: 0;
 }
 
 .empty-state {

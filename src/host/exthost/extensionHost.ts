@@ -18,6 +18,7 @@ import { ClaudeWebviewBridge } from './bridge';
 import { PanelRestore } from './panelRestore';
 import { createCompatHost, type CompatHostHandle, type MainRpc, type RendererRpc } from './compatHost';
 import { readContributions } from './contributions';
+import { registerEditorRequests } from './editorRequests';
 import { installVSCodeModule } from './requireHook';
 import { registerWorkbenchCommands } from './workbenchCommands';
 
@@ -94,10 +95,10 @@ export class ExtensionHost {
     this.compat = compat;
     const { api, services } = createVSCodeApi(compat.host, {
       onShowOutput: (channel) => this.logger.info(`output channel "${channel.name}" is at ${channel.filePath}`),
-      onShowDocument: (document) => this.logger.info(`open document requested (editor arrives in M2): ${document.fileName}`),
     });
     this.services = services;
     registerWorkbenchCommands(services.commands);
+    registerEditorRequests(renderer, services, init.workspaceFolders, this.logger.child('editors'));
     this.panelRestore = new PanelRestore(services.webviews, compat.host.storage, this.logger.child('restore'));
     services.webviews.interceptor = new ClaudeWebviewBridge(compat.host.os, this.logger.child('bridge'), {
       diffEditorAvailable: () => false,
@@ -128,6 +129,7 @@ export class ExtensionHost {
       }
     }
     this.services?.webviews.dispose();
+    this.services?.documents.dispose();
     this.renderer?.dispose();
   }
 

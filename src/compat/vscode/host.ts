@@ -14,7 +14,14 @@ import type {
   PanelCreateParams,
   PanelUpdateParams,
   QuickPickRequest,
+  RangeDto,
+  RevealType,
+  SelectionDto,
+  ShowDiffEditorParams,
+  ShowTextEditorParams,
   StorageScope,
+  TextChangeDto,
+  TextEditDto,
   ThemeKind,
   ViewCreateParams,
   ViewUpdateParams,
@@ -82,6 +89,36 @@ export interface WebviewBackend {
   readonly onDidClosePanel: Event<{ readonly panelId: string }>;
 }
 
+/** The renderer's side of attached documents (shown in an editor, owned by its text model). */
+export interface DocumentsBackend {
+  applyEdits(uri: string, edits: readonly TextEditDto[]): Promise<boolean>;
+  /** Replace the text with what is on disk and mark it saved. */
+  reload(uri: string, text: string): void;
+  didSave(uri: string): void;
+  /** Changed on disk while it has unsaved changes. */
+  didChangeOnDisk(uri: string): void;
+  readonly onDidChange: Event<{
+    readonly uri: string;
+    readonly changes: readonly TextChangeDto[];
+    readonly isUndoing: boolean;
+    readonly isRedoing: boolean;
+  }>;
+  readonly onDidChangeDirty: Event<{ readonly uri: string; readonly isDirty: boolean }>;
+}
+
+/** The content pane's text and diff editors. */
+export interface EditorsBackend {
+  showText(params: ShowTextEditorParams): Promise<void>;
+  showDiff(params: ShowDiffEditorParams): Promise<void>;
+  setSelections(editorId: string, selections: readonly SelectionDto[]): void;
+  revealRange(editorId: string, range: RangeDto, revealType: RevealType): void;
+  closeTab(tabId: string): void;
+  readonly onDidChangeSelection: Event<{ readonly editorId: string; readonly selections: readonly SelectionDto[] }>;
+  readonly onDidChangeVisible: Event<{ readonly active: string | undefined; readonly visible: readonly string[] }>;
+  readonly onDidActivateTab: Event<{ readonly tabId: string }>;
+  readonly onDidCloseTab: Event<{ readonly tabId: string }>;
+}
+
 export interface CompatHost {
   readonly logger: ILogger;
   readonly app: AppInfo;
@@ -94,6 +131,8 @@ export interface CompatHost {
   readonly os: OsBackend;
   readonly ui: UiBackend;
   readonly webviews: WebviewBackend;
+  readonly documents: DocumentsBackend;
+  readonly editors: EditorsBackend;
   /** Records a VS Code API member the extension touched that we do not implement. */
   reportUnimplemented(member: string): void;
   createOutputSink(name: string): OutputSink;

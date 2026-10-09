@@ -21,6 +21,8 @@ import type {
 export type MainRpc = RpcEndpoint<ExtHostApiForMain, MainApiForExtHost, MessagePortMain>;
 export type RendererRpc = RpcEndpoint<ExtHostApiForRenderer, RendererApiForExtHost, MessagePortMain>;
 
+type ExtHostApiForRendererParams<K extends keyof ExtHostApiForRenderer> = Parameters<ExtHostApiForRenderer[K]>[0];
+
 export interface CompatHostHandle {
   readonly host: CompatHost;
   /** Main reported that settings.json changed. */
@@ -74,6 +76,19 @@ export function createCompatHost(options: {
   renderer.handle('panel.didChangeViewState', (params) => panelViewStates.fire(params));
   renderer.handle('panel.didClose', (params) => panelCloses.fire(params));
   renderer.handle('view.didChangeVisibility', (params) => viewVisibility.fire(params));
+
+  const documentChanges = new Emitter<ExtHostApiForRendererParams<'document.didChange'>>();
+  const documentDirty = new Emitter<{ uri: string; isDirty: boolean }>();
+  const editorSelections = new Emitter<ExtHostApiForRendererParams<'editor.didChangeSelection'>>();
+  const editorVisibility = new Emitter<ExtHostApiForRendererParams<'editor.didChangeVisible'>>();
+  const tabActivations = new Emitter<{ tabId: string }>();
+  const tabCloses = new Emitter<{ tabId: string }>();
+  renderer.handle('document.didChange', (params) => documentChanges.fire(params));
+  renderer.handle('document.didChangeDirty', (params) => documentDirty.fire(params));
+  renderer.handle('editor.didChangeSelection', (params) => editorSelections.fire(params));
+  renderer.handle('editor.didChangeVisible', (params) => editorVisibility.fire(params));
+  renderer.handle('tab.didActivate', (params) => tabActivations.fire(params));
+  renderer.handle('tab.didClose', (params) => tabCloses.fire(params));
 
   const reported = new Set<string>();
   const unimplementedLog = new FileAppender(path.join(init.paths.logs, 'shim-unimplemented.log'));
@@ -129,6 +144,27 @@ export function createCompatHost(options: {
       onDidUpdateState: webviewStates.event,
       onDidChangePanelViewState: panelViewStates.event,
       onDidClosePanel: panelCloses.event,
+    },
+
+    documents: {
+      applyEdits: (uri, edits) => renderer.call('document.applyEdits', { uri, edits }),
+      reload: (uri, text) => renderer.notify('document.reload', { uri, text }),
+      didSave: (uri) => renderer.notify('document.didSave', { uri }),
+      didChangeOnDisk: (uri) => renderer.notify('document.didChangeOnDisk', { uri }),
+      onDidChange: documentChanges.event,
+      onDidChangeDirty: documentDirty.event,
+    },
+
+    editors: {
+      showText: (params) => renderer.call('editor.showText', params),
+      showDiff: (params) => renderer.call('editor.showDiff', params),
+      setSelections: (editorId, selections) => renderer.notify('editor.setSelections', { editorId, selections }),
+      revealRange: (editorId, range, revealType) => renderer.notify('editor.revealRange', { editorId, range, revealType }),
+      closeTab: (tabId) => renderer.notify('tab.close', { tabId }),
+      onDidChangeSelection: editorSelections.event,
+      onDidChangeVisible: editorVisibility.event,
+      onDidActivateTab: tabActivations.event,
+      onDidCloseTab: tabCloses.event,
     },
 
     reportUnimplemented(member) {

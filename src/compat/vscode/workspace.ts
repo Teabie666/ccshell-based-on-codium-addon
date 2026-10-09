@@ -7,7 +7,7 @@ import type { ConfigurationService } from './configuration';
 import type { FileSystemService } from './fileSystem';
 import type { CompatHost } from './host';
 import type { TextDocuments } from './textDocuments';
-import { Disposable, Range, type WorkspaceEdit } from './types';
+import { Disposable, type WorkspaceEdit } from './types';
 import { Uri } from './uri';
 
 export interface WorkspaceDependencies {
@@ -117,28 +117,8 @@ export function createWorkspaceNamespace(deps: WorkspaceDependencies): Record<st
     onDidOpenTextDocument: documents.onDidOpen,
     onDidCloseTextDocument: documents.onDidClose,
     onDidSaveTextDocument: documents.onDidSave,
-    onWillSaveTextDocument: Event.None,
-    onDidChangeTextDocument: ((listener, thisArgs, disposables) =>
-      documents.onDidChange(
-        ({ document, previousText }) => {
-          const lines = previousText.split('\n');
-          const end = lines.length - 1;
-          listener.call(thisArgs, {
-            document,
-            contentChanges: [
-              {
-                range: new Range(0, 0, end, lines[end]!.length),
-                rangeOffset: 0,
-                rangeLength: previousText.length,
-                text: document.getText(),
-              },
-            ],
-            reason: undefined,
-          });
-        },
-        undefined,
-        disposables,
-      )) as Event<unknown>,
+    onWillSaveTextDocument: documents.onWillSave,
+    onDidChangeTextDocument: documents.onDidChange,
 
     applyEdit: async (edit: WorkspaceEdit) => {
       for (const [uri, edits] of edit.entries()) {
@@ -149,7 +129,10 @@ export function createWorkspaceNamespace(deps: WorkspaceDependencies): Record<st
       }
       return true;
     },
-    saveAll: () => Promise.resolve(true),
+    saveAll: async () => {
+      const results = await Promise.all(documents.all.filter((document) => document.isDirty).map((document) => document.save()));
+      return results.every(Boolean);
+    },
 
     onDidCreateFiles: Event.None,
     onDidDeleteFiles: Event.None,

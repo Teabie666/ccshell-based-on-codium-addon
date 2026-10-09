@@ -32,7 +32,27 @@ const builds = [
   { entryPoints: ['src/host/main/main.ts'], outfile: 'dist/main.js', platform: 'node', format: 'cjs', target: NODE_TARGET },
   { entryPoints: ['src/host/preload/preload.ts'], outfile: 'dist/preload.js', platform: 'node', format: 'cjs', target: NODE_TARGET },
   { entryPoints: ['src/host/exthost/main.ts'], outfile: 'dist/exthost.js', platform: 'node', format: 'cjs', target: NODE_TARGET },
-  { entryPoints: ['src/host/renderer/main.ts'], outfile: 'dist/renderer/main.js', platform: 'browser', format: 'iife', target: CHROME_TARGET },
+  // ESM with code splitting: Monaco, Shiki grammars and the Markdown renderer sit behind
+  // dynamic import() and load on first use, so the shell itself starts small.
+  {
+    entryPoints: { main: 'src/host/renderer/main.ts' },
+    outdir: 'dist/renderer',
+    platform: 'browser',
+    format: 'esm',
+    splitting: true,
+    chunkNames: 'chunks/[name]-[hash]',
+    target: CHROME_TARGET,
+    // Monaco's modules import their own CSS; the prebuilt stylesheet is copied instead (copyStatic).
+    loader: { '.css': 'empty' },
+  },
+  // Monaco's editor worker (diff computation, word suggestions): self-contained, classic worker.
+  {
+    entryPoints: { 'editor.worker': 'monaco-editor/editor/editor.worker.js' },
+    outdir: 'dist/renderer',
+    platform: 'browser',
+    format: 'iife',
+    target: CHROME_TARGET,
+  },
   // Inlined into every webview document, so no source map comment and no module wrapper.
   {
     entryPoints: ['src/host/webview/bootstrap.ts'],
@@ -49,6 +69,8 @@ function copyStatic() {
   for (const file of ['index.html', 'styles.css']) {
     cpSync(path.join(root, 'src/host/renderer', file), path.join(dist, 'renderer', file));
   }
+  // Every Monaco style in one file (codicon font inlined); loaded together with the editor.
+  cpSync(path.join(root, 'node_modules/monaco-editor/min/vs/editor/editor.main.css'), path.join(dist, 'renderer', 'monaco.css'));
   const themes = path.join(root, 'resources/themes');
   if (existsSync(themes)) {
     cpSync(themes, path.join(dist, 'themes'), { recursive: true });
