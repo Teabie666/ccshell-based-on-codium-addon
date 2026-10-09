@@ -1,6 +1,6 @@
 /**
- * Built-in VS Code workbench commands the extension calls, as ccshell understands them.
- * ccshell has one editor group and no explorer, so most layout commands are deliberate
+ * Built-in VS Code workbench commands the extension calls, as vilaus understands them.
+ * vilaus has one editor group and no explorer, so most layout commands are deliberate
  * no-ops; registering them keeps shim-unimplemented.log about real gaps only.
  */
 
@@ -17,7 +17,7 @@ const LAYOUT_NO_OPS = [
   'workbench.action.closeEditorsInGroup',
   'workbench.action.pinEditor',
   'workbench.action.keepEditor',
-  // There is no file explorer in ccshell.
+  // There is no file explorer in vilaus.
   'revealInExplorer',
   'workbench.files.action.focusFilesExplorer',
 ];

@@ -8,7 +8,7 @@ import { SettingsStore } from '../../../src/host/main/settingsStore';
 import { writeFileAtomic } from '../../../src/host/node/jsonFile';
 import { NullLogger } from '../../../src/platform/log';
 
-const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ccshell-settings-'));
+const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'vilaus-settings-'));
 after(() => fs.rmSync(dir, { recursive: true, force: true }));
 
 const temps = (): string[] => fs.readdirSync(dir).filter((name) => name.endsWith('.tmp'));

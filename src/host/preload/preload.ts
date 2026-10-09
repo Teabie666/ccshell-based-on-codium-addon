@@ -16,7 +16,7 @@ ipcRenderer.on(IpcChannel.Event, (_event, name: unknown, payload: unknown) => {
   window.postMessage({ type: IpcChannel.Event, name, payload }, window.location.origin);
 });
 
-contextBridge.exposeInMainWorld('ccshellNative', {
+contextBridge.exposeInMainWorld('vilausNative', {
   invoke: (method: string, params: unknown): Promise<unknown> =>
     ipcRenderer.invoke(IpcChannel.Rpc, method, params),
   platform: process.platform,

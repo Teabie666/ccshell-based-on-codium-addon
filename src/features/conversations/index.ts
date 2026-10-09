@@ -59,7 +59,7 @@ export const conversationsModule: ShellModule = {
     const workspaceName = services.get(IWorkspace).name;
     subscriptions.add(
       tabs.onDidChangeActive((panel) => {
-        document.title = panel ? `${panel.title} - ${workspaceName} - ccshell` : `${workspaceName} - ccshell`;
+        document.title = panel ? `${panel.title} - ${workspaceName} - Vilausity` : `${workspaceName} - Vilausity`;
       }),
     );
     subscriptions.add(themes.onDidChange(() => tabs.refreshIcons()));

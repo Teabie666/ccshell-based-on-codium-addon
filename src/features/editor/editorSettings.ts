@@ -1,5 +1,5 @@
 /**
- * The editor settings ccshell honours (VS Code's names and defaults), and how they become
+ * The editor settings vilaus honours (VS Code's names and defaults), and how they become
  * Monaco options. Fonts reach Monaco through the theme's font variables (main computes them
  * from these same settings), so webviews and editors agree on them.
  */

@@ -1,4 +1,4 @@
-# ccshell：围绕 Claude Code 的轻量工作台（代号，名字和图标最后单独定）
+# Vilausity：围绕 Claude Code 的轻量工作台（图标待定）
 
 ## Context
 
@@ -65,8 +65,8 @@ src/
                  服务注册表（轻量依赖注入 DI）。不依赖任何 feature。
   core/          壳的骨架和"贡献点"注册表 contribution registries：commands、keybindings、menus、views（侧边栏/面板）、
                  editors（按文件类型或 scheme 注册内容面板编辑器）、settings schema、title bar items。
-                 对外暴露 ccshell API，所有 feature 都只通过它接入。
-  features/      每个功能是一个模块（目录里有 manifest + activate(ctx)），只依赖 ccshell API：
+                 对外暴露 Vilausity API，所有 feature 都只通过它接入。
+  features/      每个功能是一个模块（目录里有 manifest + activate(ctx)），只依赖 Vilausity API：
                  sessions/、chat/、content-pane/、editor/（Monaco+Shiki）、diff/、markdown/、comments/、
                  providers/（API 接口）、extension-manager/、theme/、quick-open/、command-palette/
   compat/vscode/ VS Code API 兼容层（shim），一个命名空间一个文件，跟壳的 UI 完全隔开，只通过 core 的服务说话
@@ -74,7 +74,7 @@ src/
                  require 劫持、bridge 拦截）、renderer/（启动 core 和 features、iframe 宿主）
 ```
 
-- **以后的插件系统**：内置功能本身就用"模块 + ccshell API + 贡献点"这套机制，以后开放外部插件只是"从用户目录加载同样格式的模块"。第一版不开放，但 API 按这个要求设计：版本号、只读的上下文、可撤销的注册。
+- **以后的插件系统**：内置功能本身就用"模块 + Vilausity API + 贡献点"这套机制，以后开放外部插件只是"从用户目录加载同样格式的模块"。第一版不开放，但 API 按这个要求设计：版本号、只读的上下文、可撤销的注册。
 - **工程规范**：
   - TypeScript strict，ESLint + Prettier；
   - IPC 消息全部在 `protocol.ts` 里有类型定义，运行时用 zod 校验；
@@ -104,7 +104,7 @@ Electron main ── 窗口、CLI、单实例、配置/状态存储（唯一写�
 ## 界面（结构学 Claude app，视觉是 VS Code）
 
 ```
-┌ 标题栏：ccshell · <文件夹 ▾> · <API 接口 ▾>                            ─ □ × ┐
+┌ 标题栏：Vilausity · <文件夹 ▾> · <API 接口 ▾>                            ─ □ × ┐
 ├──────────┬───────────────────────────┬──────────────────────────────────┤
 │ 会话列表  │ 当前对话（插件原版界面）     │ 内容面板 [plan.md][diff: a.py][b.ts]   │
 │          │ ┌评论块 3┐ ← 往上叠          │ Monaco / diff / Markdown 预览          │
@@ -180,17 +180,17 @@ Electron main ── 窗口、CLI、单实例、配置/状态存储（唯一写�
 - **预设**以数据文件的形式内置：Claude 订阅、Anthropic API、DeepSeek、Kimi、GLM、Qwen…，用户可以增删。
 - **密钥**用 Electron `safeStorage`（Windows DPAPI）加密存放，绝不以明文写进 settings.json，也绝不进安装包。
 - **导入**：从 VSCodium 的 DeepSeek 配置档 `profiles\-68229e90` 导入成一个"DeepSeek"接口，导入后密钥立即加密。
-- 菜单里可以"为此接口创建快捷方式"（例如给 DeepSeek 接口生成快捷方式：`ccshell.exe --provider deepseek`）。窗口用不同的强调色区分接口。
+- 菜单里可以"为此接口创建快捷方式"（例如给 DeepSeek 接口生成快捷方式：`Vilausity.exe --provider deepseek`）。窗口用不同的强调色区分接口。
 
 ## 配置和 CLI
 
-- **数据目录**：`%APPDATA%\ccshell\`，下面有 `settings.json`（JSONC）、`providers.json`（密钥字段是加密后的值）、`state\`、`logs\`、`extensions\`、`themes\`。Program Files 下的程序目录只读。
-- **设置的 schema** = 插件的 `contributes.configuration` + 各 feature 通过贡献点注册的设置（`ccshell.*`，以及壳照 VS Code 支持的 `editor.*`、`workbench.*` 等）。
+- **数据目录**：`%APPDATA%\Vilausity\`，下面有 `settings.json`（JSONC）、`providers.json`（密钥字段是加密后的值）、`state\`、`logs\`、`extensions\`、`themes\`。Program Files 下的程序目录只读。
+- **设置的 schema** = 插件的 `contributes.configuration` + 各 feature 通过贡献点注册的设置（`vilaus.*`，以及壳照 VS Code 支持的 `editor.*`、`workbench.*` 等）。
 - **设置编辑器**（M2.5）：照 VS Code 的设置界面，作为内容面板的标签页（Ctrl+,）：搜索、分类目录、按类型给开关 / 下拉 / 输入框，改过的项有标记、可以还原，复杂的值去 settings.json 改；一个按钮切到在 Monaco 里编辑 settings.json（补全、悬停说明、按 schema 校验）。两边改了都保存后立即生效。编辑器的字体、字号等设置对普通编辑器和 diff 都生效。
 - 首次启动可以从 VSCodium 导入 `claudeCode.*` 和编辑器字体设置。
 - **CLI**：
   ```
-  ccshell [folder] [--provider <id>] [--new-window] [--session <id>] [--prompt <文本>] [--goto <file:line>]
+  vilaus [folder] [--provider <id>] [--new-window] [--session <id>] [--prompt <文本>] [--goto <file:line>]
           [--settings <file>] [--extension-dir <dir>] [--user-data-dir <dir>] [--theme <id>] [--log-level <lv>]
           [--devtools] [--version] [--help]
   ```
@@ -210,11 +210,11 @@ Electron main ── 窗口、CLI、单实例、配置/状态存储（唯一写�
 
 ## 界面语言（English / 简体中文，features/language）
 
-- **两种语言**：英文和简体中文。设置 `ccshell.language`：`auto`（默认，跟随系统首选语言：中文就用中文，否则英文）、`zh-cn`、`en`。命令面板里"配置显示语言"（Configure Display Language）切换，跟 VS Code 一样重启后生效；重启时打开的对话会自动恢复。
+- **两种语言**：英文和简体中文。设置 `vilaus.language`：`auto`（默认，跟随系统首选语言：中文就用中文，否则英文）、`zh-cn`、`en`。命令面板里"配置显示语言"（Configure Display Language）切换，跟 VS Code 一样重启后生效；重启时打开的对话会自动恢复。
 - **范围**：壳自己画的全部文字（标题栏、标签页、空状态、查找、命令面板的命令名和分类、快速输入和对话框、通知、插件进程崩溃提示、右键菜单的编辑项和链接项），加上插件出现在壳里的文字（目前是右键菜单项）。插件自己的界面（对话、会话列表）不在范围内：插件没做本地化（2.1.282 没有 nls 文件，也不读 `vscode.env.language`），始终是英文。
-- **插件命令的名字**：插件的命令标题是写死的英文。ccshell 按命令 id 自带中文名，没收录的回落到英文；英文去掉标题里的 "Claude Code: " 前缀。
+- **插件命令的名字**：插件的命令标题是写死的英文。Vilausity 按命令 id 自带中文名，没收录的回落到英文；英文去掉标题里的 "Claude Code: " 前缀。
 - **机制**：`platform/nls.ts`，三个进程共用。代码里只写英文：每个模块在自己目录的 `messages.ts` 里用 `defineMessages('<命名空间>', {...})` 定义，键有类型检查。中文放在单独的语言包 `src/nls/zh-cn.json`（键是 `命名空间.键`），没翻译的条目显示英文，所以写功能时可以只写英文，译文攒一批再补。`npm run nls` 列出语言包缺的和过时的条目（过时的算失败），`npm run nls -- --todo` 把待翻译的条目输出成 JSON。支持 `{0}` 占位符。语言由 main 在启动时算出，传给 renderer 和 extension host；`vscode.env.language` 报告同一个值（跟 VS Code 一致）。页面的 `lang` 属性跟着设，中文用系统的中文回退字体。
-- **译名**：术语跟 VS Code 官方简体中文语言包一致（命令面板、颜色主题、开发人员工具……）；产品名（Claude、Claude Code、ccshell）和快捷键保持原样。规范写进 `docs/design.md`。日志、代码注释、提交信息不翻译。
+- **译名**：术语跟 VS Code 官方简体中文语言包一致（命令面板、颜色主题、开发人员工具……）；产品名（Claude、Claude Code、Vilausity）和快捷键保持原样。规范写进 `docs/design.md`。日志、代码注释、提交信息不翻译。
 - **之后的阶段**：新加的界面文字一律走这套机制（先写英文，译文进语言包）；M2 的 Monaco 按界面语言加载它自己的语言包。
 
 ## 插件界面汉化（可选，放在 M3 之后）
@@ -228,9 +228,9 @@ Electron main ── 窗口、CLI、单实例、配置/状态存储（唯一写�
 
 ## 打包
 
-electron-builder 打 NSIS 安装包：可以选只装当前用户，或装到 Program Files 给所有用户；建开始菜单和桌面快捷方式；卸载时默认保留 `%APPDATA%\ccshell`。安装包里不含任何 Anthropic 代码，插件在首次启动时从 Open VSX 下载。不出便携版。**名字、图标这些全部做完后单独研究。**
+electron-builder 打 NSIS 安装包：可以选只装当前用户，或装到 Program Files 给所有用户；建开始菜单和桌面快捷方式；卸载时默认保留 `%APPDATA%\Vilausity`。安装包里不含任何 Anthropic 代码，插件在首次启动时从 Open VSX 下载。不出便携版。**名字、图标这些全部做完后单独研究。**
 
-- **目标环境**：一台干净的 Windows 10/11 x64，只有安装包和网络。有 Claude 账号，或者有某个接口的 API 和 key，装好就能用 Claude Code 和 ccshell 的功能：不需要 VS Code / VSCodium，不需要单独装 Claude Code CLI（插件包里自带 `claude.exe`），不需要 Node、Python、Git。第一次启动要联网下载插件（Open VSX 上 Anthropic 认证发布的包，2.1.295 约 116 MB）。
+- **目标环境**：一台干净的 Windows 10/11 x64，只有安装包和网络。有 Claude 账号，或者有某个接口的 API 和 key，装好就能用 Claude Code 和 Vilausity 的功能：不需要 VS Code / VSCodium，不需要单独装 Claude Code CLI（插件包里自带 `claude.exe`），不需要 Node、Python、Git。第一次启动要联网下载插件（Open VSX 上 Anthropic 认证发布的包，2.1.295 约 116 MB）。
 - **Git for Windows 可选**：找不到 Git Bash 时，Claude Code（2.1.282 起）自动改用它的 PowerShell 工具；装了 Git，Claude 才能跑 bash 命令、做 git 操作、用 `shell: bash` 的技能。首次启动提示一次（说明 + 下载链接），不打包。Git 不在默认位置时，用环境变量 `CLAUDE_CODE_GIT_BASH_PATH` 指定 `bash.exe`。
 - **发布**：安装包放在 GitHub Releases，新版本由使用者手动下载安装，不做程序内自动更新。
 - **不做代码签名**：第一次运行安装包会被 SmartScreen 拦一下，发布说明里写清楚怎么放行（"更多信息" → "仍要运行"）。
@@ -277,5 +277,5 @@ electron-builder 打 NSIS 安装包：可以选只装当前用户，或装到 Pr
 - **插件升级破坏兼容**：Proxy 兜底和日志、锁定版本、回滚、冒烟测试。插件私有协议的依赖集中在 bridge 和 compat 里，每处都注明来源。
 - **许可**：插件是 Anthropic 的 All rights reserved 代码，只在本机运行，不重新分发；使用者自己从 Open VSX 下载。正式名字和图标不能像官方产品（M6 处理）。
 - **评论块注入 iframe**：依赖插件输入框的 DOM 位置。定位要用稳定特征；定位失败就退回到壳层渲染的评论栏，功能不受影响。
-- **同时开 VSCodium 和 ccshell**：别在两边同时打开同一个会话。
+- **同时开 VSCodium 和 Vilausity**：别在两边同时打开同一个会话。
 - **管理员实例**：Windows 的 UIPI 会拦掉从资源管理器拖进窗口的文件。

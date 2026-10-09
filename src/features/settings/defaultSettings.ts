@@ -12,7 +12,7 @@ import type { TextEditorService, TextViewer } from '../editor';
 import { t } from './messages';
 import { defaultSettingsText } from './settingItems';
 
-const DEFAULT_SETTINGS_URI = 'ccshell-settings:/defaultSettings.json';
+const DEFAULT_SETTINGS_URI = 'vilaus-settings:/defaultSettings.json';
 
 export class DefaultSettingsPane implements EditorPane {
   private body: HTMLElement;

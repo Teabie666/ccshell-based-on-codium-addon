@@ -43,7 +43,7 @@ import { WebviewDocumentStore } from './webviewDocuments';
 /** The VS Code version we report to the extension. It gates features on this number. */
 export const VSCODE_COMPAT_VERSION = '1.121.0';
 
-const THEME_SETTING = 'ccshell.theme';
+const THEME_SETTING = 'vilaus.theme';
 /** Settings that change the theme data (colors or font variables). */
 const THEME_SETTING_KEYS = new Set([
   THEME_SETTING,
@@ -53,7 +53,7 @@ const THEME_SETTING_KEYS = new Set([
   'editor.fontSize',
   'editor.fontWeight',
 ]);
-const WINDOW_STATE_KEY = 'ccshell.window';
+const WINDOW_STATE_KEY = 'vilaus.window';
 
 export interface ShellEnvironment {
   readonly args: CliArgs;
@@ -111,7 +111,7 @@ export class ShellApp extends Disposable {
   async start(): Promise<void> {
     this.extension = locateClaudeExtension(this.env.args.extensionDir);
     if (!this.extension) {
-      dialog.showErrorBox('ccshell', t('extensionNotFound'));
+      dialog.showErrorBox('Vilausity', t('extensionNotFound'));
       app.quit();
       return;
     }
@@ -339,9 +339,9 @@ export class ShellApp extends Disposable {
 
   private appInfo(): AppInfo {
     return {
-      appName: 'ccshell (VSCodium)',
+      appName: 'Vilausity (VSCodium)',
       vscodeVersion: VSCODE_COMPAT_VERSION,
-      uriScheme: 'ccshell',
+      uriScheme: 'vilaus',
       language: this.language,
       machineId: this.machineId(),
       sessionId: crypto.randomUUID(),

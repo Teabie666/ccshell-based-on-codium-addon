@@ -1,4 +1,4 @@
-/** Command-line arguments. See `ccshell --help` (M4) for the full list. */
+/** Command-line arguments. See `vilaus --help` (M4) for the full list. */
 
 import * as path from 'node:path';
 import { parseArgs } from 'node:util';

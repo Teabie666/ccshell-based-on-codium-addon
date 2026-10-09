@@ -18,14 +18,14 @@ export const windowModule: ShellModule = {
     brand.className = 'titlebar-brand';
     const app = document.createElement('span');
     app.className = 'titlebar-app';
-    app.textContent = 'ccshell';
+    app.textContent = 'Vilausity';
     const folder = document.createElement('span');
     folder.className = 'titlebar-workspace';
     folder.textContent = workspace.name;
     folder.title = workspace.folders.join('\n');
     brand.append(app, folder);
     subscriptions.add(layout.addTitleBarItem('left', brand, 10));
-    document.title = `${workspace.name} - ccshell`;
+    document.title = `${workspace.name} - Vilausity`;
 
     const zoom = (delta: number) => () => native.call('window.zoom', { delta });
     [

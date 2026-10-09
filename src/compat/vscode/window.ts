@@ -23,7 +23,7 @@ export interface WindowDependencies {
   readonly editors: EditorService;
   /** Where `outputChannel.show()` goes (the log opens in the content pane). */
   readonly onShowOutput: (channel: OutputChannelImpl) => void;
-  /** Handlers from `window.registerUriHandler` (wired to the ccshell:// protocol in M4). */
+  /** Handlers from `window.registerUriHandler` (wired to the vilaus:// protocol in M4). */
   readonly uriHandlers: Set<vscode.UriHandler>;
 }
 
@@ -160,7 +160,7 @@ export function createWindowNamespace(deps: WindowDependencies): Record<string, 
     setStatusBarMessage: () => new Disposable(() => {}),
 
     createStatusBarItem: (idOrAlignment?: string | StatusBarAlignment, alignmentOrPriority?: number) => ({
-      id: typeof idOrAlignment === 'string' ? idOrAlignment : 'ccshell.statusBarItem',
+      id: typeof idOrAlignment === 'string' ? idOrAlignment : 'vilaus.statusBarItem',
       alignment: typeof idOrAlignment === 'number' ? idOrAlignment : (alignmentOrPriority ?? StatusBarAlignment.Left),
       priority: undefined,
       name: undefined,
@@ -217,7 +217,7 @@ export function createWindowNamespace(deps: WindowDependencies): Record<string, 
     },
     createTextEditorDecorationType: () => ({ key: `decoration-${Math.random().toString(36).slice(2)}`, dispose: () => {} }),
 
-    // ---- terminals (ccshell has none; open_terminal requests go to Windows Terminal) ----
+    // ---- terminals (vilaus has none; open_terminal requests go to Windows Terminal) ----
     get terminals() {
       return [];
     },

@@ -4,7 +4,7 @@ import type { SettingDefinition, SettingSchema } from '../../core/settings';
 import type { ExtensionContributions } from '../../platform/protocol';
 
 /**
- * Settings of anthropic.claude-code 2.1.282 for VS Code integration ccshell does not have
+ * Settings of anthropic.claude-code 2.1.282 for VS Code integration vilaus does not have
  * (a terminal mode, the sidebar / panel placement, editor groups, VS Code keybindings it
  * binds itself). They stay in the settings.json schema but are not listed.
  */

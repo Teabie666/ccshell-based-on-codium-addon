@@ -11,10 +11,10 @@
 
 export type UiLanguage = 'en' | 'zh-cn';
 
-/** The `ccshell.language` setting: a language, or `auto` to follow the system. */
+/** The `vilaus.language` setting: a language, or `auto` to follow the system. */
 export type UiLanguageSetting = UiLanguage | 'auto';
 
-export const LANGUAGE_SETTING = 'ccshell.language';
+export const LANGUAGE_SETTING = 'vilaus.language';
 
 /** How each language names itself, e.g. in the language picker. */
 export const LANGUAGE_NAMES: Readonly<Record<UiLanguage, string>> = {

@@ -58,7 +58,7 @@ export class ExtHostProcess extends Disposable {
 
   static async start(entryScript: string, logger: ILogger): Promise<ExtHostProcess> {
     const child = utilityProcess.fork(entryScript, [], {
-      serviceName: 'ccshell extension host',
+      serviceName: 'vilaus extension host',
       stdio: 'pipe',
       env: cleanEnvironment(),
     });

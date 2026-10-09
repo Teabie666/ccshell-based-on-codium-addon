@@ -33,7 +33,7 @@ async function waitForTheme(expectedLabel) {
 }
 
 async function captureWebview() {
-  const panel = vscode.window.createWebviewPanel('ccshellThemeCapture', 'Theme capture', vscode.ViewColumn.One, {
+  const panel = vscode.window.createWebviewPanel('vilausThemeCapture', 'Theme capture', vscode.ViewColumn.One, {
     enableScripts: true,
   });
   const nonce = Math.random().toString(36).slice(2);

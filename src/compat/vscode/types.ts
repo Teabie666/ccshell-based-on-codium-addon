@@ -1,4 +1,4 @@
-// Value types and enums for the `vscode` API compatibility layer used by ccshell.
+// Value types and enums for the `vscode` API compatibility layer used by vilaus.
 // Enum values are verified against @types/vscode 1.140; class behavior mirrors VS Code's
 // extHostTypes.ts so that `new Position(...)` and `instanceof` checks behave identically.
 

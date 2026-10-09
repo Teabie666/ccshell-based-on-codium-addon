@@ -151,7 +151,7 @@ export function createVSCodeApi(host: CompatHost, hooks: CompatHooks): CompatApi
   };
 
   const languages = {
-    // ccshell runs no language servers: no diagnostics, for one file or for all.
+    // vilaus runs no language servers: no diagnostics, for one file or for all.
     getDiagnostics: () => [],
     onDidChangeDiagnostics: Event.None,
     getLanguages: () => Promise.resolve(['plaintext', 'markdown', 'typescript', 'javascript', 'python', 'json']),

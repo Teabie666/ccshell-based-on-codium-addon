@@ -1,4 +1,4 @@
-/** Color theme picker. The choice is saved as `ccshell.theme` in settings.json. */
+/** Color theme picker. The choice is saved as `vilaus.theme` in settings.json. */
 
 import type { ShellModule } from '../../core/module';
 import { CommandCategory, SettingsSection } from '../../core/messages';
@@ -58,7 +58,7 @@ export const themesModule: ShellModule = {
       subscriptions.add(
         settings.register([
           {
-            key: 'ccshell.theme',
+            key: 'vilaus.theme',
             section: SettingsSection.workbench,
             order: 0,
             schema: {

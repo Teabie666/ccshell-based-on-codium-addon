@@ -456,7 +456,7 @@ export class TextDocuments implements IDisposable {
       waitUntil: (thenable) => pending.push(thenable),
     });
     if (pending.length > 0) {
-      // Participants' edits (TextEdit[] results) are not applied; ccshell has no formatters.
+      // Participants' edits (TextEdit[] results) are not applied; vilaus has no formatters.
       const budget = new Promise((resolve) => setTimeout(resolve, WILL_SAVE_BUDGET_MS));
       await Promise.race([Promise.allSettled(pending), budget]);
     }

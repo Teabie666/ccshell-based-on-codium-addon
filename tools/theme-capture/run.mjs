@@ -1,9 +1,9 @@
-// Captures VS Code's built-in themes as ccshell theme files (resources/themes/<id>.json).
+// Captures VS Code's built-in themes as vilaus theme files (resources/themes/<id>.json).
 //   node tools/theme-capture/run.mjs [--vscodium "C:\Program Files\VSCodium\VSCodium.exe"]
 //
 // Opens one VSCodium window on a temp folder with the capture extension loaded. The theme
 // is switched in that folder's workspace settings only; the user's settings are untouched.
-// Font variables are dropped: fonts are ccshell settings, not part of a theme.
+// Font variables are dropped: fonts are vilaus settings, not part of a theme.
 import { spawn } from 'node:child_process';
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import path from 'node:path';

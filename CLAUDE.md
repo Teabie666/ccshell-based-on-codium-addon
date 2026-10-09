@@ -1,6 +1,6 @@
-# ccshell 项目说明（给在这个仓库里干活的 AI 编码助手）
+# Vilausity 项目说明（给在这个仓库里干活的 AI 编码助手）
 
-ccshell（代号）：在 VS Code 之外原样运行官方 Claude Code 插件的 Electron 程序。做法是伪造一个 `vscode` 模块，编辑器用 Monaco，窗口结构学 Claude app，视觉用 VS Code 的风格。
+Vilausity：在 VS Code 之外原样运行官方 Claude Code 插件的 Electron 程序。做法是伪造一个 `vscode` 模块，编辑器用 Monaco，窗口结构学 Claude app，视觉用 VS Code 的风格。
 
 - 计划和阶段：`docs/PLAN.md`（立项时定下的完整计划，别删别改原意）；进度和下一步见 `docs/ROADMAP.md`。
 - 架构和分层规矩：`docs/ARCHITECTURE.md`；视觉规范：`docs/design.md`；关键决策：`docs/adr/`。

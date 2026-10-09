@@ -3,7 +3,7 @@
  *
  * Effective value = user setting if present, else the default. Defaults come from the
  * extension's package.json plus a few core VS Code settings the extension reads.
- * There are no workspace-level settings in ccshell: every update goes to the user file.
+ * There are no workspace-level settings in vilaus: every update goes to the user file.
  */
 
 import type * as vscode from 'vscode';
@@ -11,7 +11,7 @@ import { Emitter, type Event } from '../../platform/event';
 import type { IDisposable } from '../../platform/lifecycle';
 import type { SettingsBackend } from './host';
 
-/** Core VS Code settings the extension reads, with VS Code's defaults (or ccshell's choice). */
+/** Core VS Code settings the extension reads, with VS Code's defaults (or vilaus's choice). */
 const CORE_DEFAULTS: Readonly<Record<string, unknown>> = {
   // Not "off": the extension then needs an explicit accept/reject on diffs (matches VSCodium usage).
   'files.autoSave': 'afterDelay',

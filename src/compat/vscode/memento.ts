@@ -37,6 +37,6 @@ export class Memento implements vscode.Memento {
     return Promise.resolve();
   }
 
-  /** Settings Sync does not exist in ccshell. */
+  /** Settings Sync does not exist in vilaus. */
   setKeysForSync(_keys: readonly string[]): void {}
 }

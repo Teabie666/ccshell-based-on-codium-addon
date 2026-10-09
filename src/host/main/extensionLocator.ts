@@ -2,7 +2,7 @@
  * Finds the Claude Code extension on disk.
  *
  * Order: `--extension-dir`, then the extension registries of local VSCodium / VS Code
- * installs. (M4 adds ccshell's own managed copy, downloaded from Open VSX, in front.)
+ * installs. (M4 adds vilaus's own managed copy, downloaded from Open VSX, in front.)
  */
 
 import * as fs from 'node:fs';

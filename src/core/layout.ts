@@ -12,7 +12,7 @@
 import { Emitter, type Event } from '../platform/event';
 import type { IDisposable } from '../platform/lifecycle';
 
-const STORAGE_KEY = 'ccshell.layout.v1';
+const STORAGE_KEY = 'vilaus.layout.v1';
 const SIDEBAR_MIN = 180;
 const SIDEBAR_DEFAULT = 280;
 const CONTENT_MIN = 240;

@@ -4,10 +4,10 @@
 // Each step prints PASS/FAIL; the process exits non-zero if any step failed.
 //
 // It runs against an API, configured by environment variables:
-//   CCSHELL_SMOKE_API_KEY     sent as ANTHROPIC_API_KEY (x-api-key), or
-//   CCSHELL_SMOKE_AUTH_TOKEN  sent as ANTHROPIC_AUTH_TOKEN (Bearer), e.g. for compatible APIs
-//   CCSHELL_SMOKE_BASE_URL    optional, ANTHROPIC_BASE_URL of an Anthropic-compatible API
-//   CCSHELL_SMOKE_MODEL       optional, default claude-haiku-4-5-20251001
+//   VILAUS_SMOKE_API_KEY     sent as ANTHROPIC_API_KEY (x-api-key), or
+//   VILAUS_SMOKE_AUTH_TOKEN  sent as ANTHROPIC_AUTH_TOKEN (Bearer), e.g. for compatible APIs
+//   VILAUS_SMOKE_BASE_URL    optional, ANTHROPIC_BASE_URL of an Anthropic-compatible API
+//   VILAUS_SMOKE_MODEL       optional, default claude-haiku-4-5-20251001
 import { _electron as electron } from 'playwright-core';
 import electronPath from 'electron';
 import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
@@ -16,22 +16,22 @@ import path from 'node:path';
 // Anthropic's consumer terms allow automated (scripted) access only through an API key, so
 // this test does not drive the signed-in Claude subscription unless told to explicitly.
 const subscription = process.argv.includes('--subscription');
-const apiKey = process.env.CCSHELL_SMOKE_API_KEY;
-const authToken = process.env.CCSHELL_SMOKE_AUTH_TOKEN;
+const apiKey = process.env.VILAUS_SMOKE_API_KEY;
+const authToken = process.env.VILAUS_SMOKE_AUTH_TOKEN;
 if (!subscription && !apiKey && !authToken) {
-  console.error('smoke: not running. Set CCSHELL_SMOKE_API_KEY or CCSHELL_SMOKE_AUTH_TOKEN (and optionally');
-  console.error('CCSHELL_SMOKE_BASE_URL, CCSHELL_SMOKE_MODEL): scripted use of a Claude subscription is not');
+  console.error('smoke: not running. Set VILAUS_SMOKE_API_KEY or VILAUS_SMOKE_AUTH_TOKEN (and optionally');
+  console.error('VILAUS_SMOKE_BASE_URL, VILAUS_SMOKE_MODEL): scripted use of a Claude subscription is not');
   console.error('allowed by the consumer terms. To run it against the signed-in account anyway:');
   console.error('npm run smoke -- --subscription');
   process.exit(2);
 }
-const model = process.env.CCSHELL_SMOKE_MODEL || 'claude-haiku-4-5-20251001';
+const model = process.env.VILAUS_SMOKE_MODEL || 'claude-haiku-4-5-20251001';
 
 /** What the extension passes to the claude process (`claudeCode.environmentVariables`). */
 function apiEnvironment() {
   const variables = { ANTHROPIC_MODEL: model };
   if (!subscription) {
-    if (process.env.CCSHELL_SMOKE_BASE_URL) variables.ANTHROPIC_BASE_URL = process.env.CCSHELL_SMOKE_BASE_URL;
+    if (process.env.VILAUS_SMOKE_BASE_URL) variables.ANTHROPIC_BASE_URL = process.env.VILAUS_SMOKE_BASE_URL;
     if (apiKey) variables.ANTHROPIC_API_KEY = apiKey;
     if (authToken) variables.ANTHROPIC_AUTH_TOKEN = authToken;
     // Background requests (titles...) use the small model; keep every tier on the given one.
@@ -63,7 +63,7 @@ writeFileSync(
       'claudeCode.hideOnboarding': true,
       'claudeCode.disableLoginPrompt': !subscription,
       // English labels: the steps look for the shell's English buttons.
-      'ccshell.language': 'en',
+      'vilaus.language': 'en',
       'claudeCode.environmentVariables': apiEnvironment(),
     },
     null,
@@ -231,7 +231,7 @@ await step('a file mention in the chat opens the file in a Monaco tab', async ()
 });
 
 await step('insert_at_mention puts plain text into the input', async () => {
-  const text = 'ccshell-insert-check';
+  const text = 'vilaus-insert-check';
   await frame.evaluate((t) => {
     window.postMessage(
       { type: 'from-extension', message: { type: 'request', channelId: '', requestId: '', request: { type: 'insert_at_mention', text: t } } },

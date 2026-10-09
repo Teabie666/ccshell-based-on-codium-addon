@@ -18,7 +18,7 @@ registerCcwSchemePrivileges();
 Menu.setApplicationMenu(null);
 
 const args = parseCliArgs(process.argv.slice(app.isPackaged ? 1 : 2));
-const dataRoot = args.userDataDir ?? path.join(app.getPath('appData'), 'ccshell');
+const dataRoot = args.userDataDir ?? path.join(app.getPath('appData'), 'Vilausity');
 const paths = createAppPaths(dataRoot);
 app.setPath('userData', dataRoot);
 app.setPath('sessionData', paths.chromium);
@@ -42,7 +42,7 @@ void app
   .whenReady()
   .then(async () => {
     pruneOldLogs(paths);
-    logger.info(`ccshell ${app.getVersion()} starting; data in ${dataRoot}`);
+    logger.info(`vilaus ${app.getVersion()} starting; data in ${dataRoot}`);
     shellApp = new ShellApp({ args, paths, appDir: __dirname, logger, logLevel });
     await shellApp.start();
   })

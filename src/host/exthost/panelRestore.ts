@@ -1,5 +1,5 @@
 /**
- * Reopens the conversation panels that were open when ccshell last closed, the way VS Code
+ * Reopens the conversation panels that were open when vilaus last closed, the way VS Code
  * restores webview panels: each panel's last webview state (which carries its session id)
  * is saved, and on start the extension's own WebviewPanelSerializer revives it.
  */
@@ -11,7 +11,7 @@ import { ViewColumn } from '../../compat/vscode/types';
 import type { IDisposable } from '../../platform/lifecycle';
 import type { ILogger } from '../../platform/log';
 
-const STORAGE_KEY = 'ccshell.openPanels';
+const STORAGE_KEY = 'vilaus.openPanels';
 const SAVE_DELAY_MS = 500;
 
 interface PanelRecord {

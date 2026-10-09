@@ -4,7 +4,7 @@
 
 ## 背景
 
-插件前端收到 Edit/Write 权限请求时，会向后端发 `open_diff`，并等待结果（插件 2.1.282）。如果返回空，前端会**自动拒绝**这次编辑（"User cancelled the edit"）。插件后端依赖 VS Code 的 diff 标签页：找不到标签页就立刻返回空。所以 ccshell 在没有 diff 编辑器之前，每一次编辑都会被自动拒绝。
+插件前端收到 Edit/Write 权限请求时，会向后端发 `open_diff`，并等待结果（插件 2.1.282）。如果返回空，前端会**自动拒绝**这次编辑（"User cancelled the edit"）。插件后端依赖 VS Code 的 diff 标签页：找不到标签页就立刻返回空。所以 Vilausity 在没有 diff 编辑器之前，每一次编辑都会被自动拒绝。
 
 ## 决定
 

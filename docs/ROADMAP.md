@@ -29,7 +29,7 @@
 - [x] 标题栏：程序名、文件夹名、对话标签页，Windows 原生窗口按钮（「文件夹 ▾」「API 接口 ▾」两个下拉放在 M4）
 - [x] 会话侧边栏：插件自带的会话列表 webview，Ctrl+B 开关，宽度可拖
 - [x] 多对话：标签页，Ctrl+N / Ctrl+W / Ctrl+Tab / Ctrl+1–9，Ctrl+Shift+T 重开关掉的对话
-- [x] 主题：从 VSCodium 抓了 6 套内置主题（`npm run capture-themes`），壳和 webview 共用；`ccshell.theme` 和字体设置改了实时生效；命令面板里能切
+- [x] 主题：从 VSCodium 抓了 6 套内置主题（`npm run capture-themes`），壳和 webview 共用；`vilaus.theme` 和字体设置改了实时生效；命令面板里能切
 - [x] 链接：webview 里的链接用外部浏览器打开
 - [x] 通知：窗口没焦点时，插件的消息发系统通知并闪任务栏
 - [x] 快捷键：在 main 里拦截，焦点在 webview 里也生效；命令面板 Ctrl+Shift+P / F1
@@ -50,7 +50,7 @@
 ## M1.5 界面语言：完成（2026-10-09）
 
 - [x] 机制：`platform/nls.ts`（`defineMessages`、`defineNames`、`{0}` 占位符、缺译回落英文），三个进程启动时定好语言；代码里只有英文，中文在语言包 `src/nls/zh-cn.json`，`npm run nls` 检查缺译和过时条目
-- [x] 设置 `ccshell.language`（`auto` / `zh-cn` / `en`，默认跟随系统）；命令面板"配置显示语言"；改了以后弹提示，点"重启"后生效，打开的对话会恢复
+- [x] 设置 `vilaus.language`（`auto` / `zh-cn` / `en`，默认跟随系统）；命令面板"配置显示语言"；改了以后弹提示，点"重启"后生效，打开的对话会恢复
 - [x] 壳的全部现有文字两份：标题栏、标签页、空状态、查找、命令面板（含分类）、快速输入和对话框、通知、崩溃提示、右键菜单（编辑项用 Electron 的 role，但换上自己的文字）
 - [x] 插件的右键菜单项：中文按命令 id 自带译名（`features/extensionMenus/commandTitles.ts`）；英文去掉 "Claude Code: " 前缀
 - [x] `vscode.env.language` 和页面的 `lang` 属性跟着界面语言（中文靠 `lang` 用系统的中文字体）
@@ -81,7 +81,7 @@
 - [x] 选区同步：`activeTextEditor`、`visibleTextEditors`、`showTextDocument`、`onDidChangeTextEditorSelection` 接到 Monaco，聊天框能带上当前文件
 - [x] 标签页可以弹出成独立窗口（内容面板右上角的按钮或命令"Move Editor into New Window"；关窗口即关标签页，标题栏按钮移回）
 - [x] 日志进面板：`claude-vscode.showLogs` 和聊天里的"打开输出"都调 `outputChannel.show()`，在内容面板打开日志文件（不需要 bridge 拦截）
-- [x] smoke 改成 API 模式：`CCSHELL_SMOKE_API_KEY` 或 `CCSHELL_SMOKE_AUTH_TOKEN`，可选 `CCSHELL_SMOKE_BASE_URL`、`CCSHELL_SMOKE_MODEL`，注入测试设置里的 `claudeCode.environmentVariables`；没配就拒绝运行（`--subscription` 才用登录的账号）
+- [x] smoke 改成 API 模式：`VILAUS_SMOKE_API_KEY` 或 `VILAUS_SMOKE_AUTH_TOKEN`，可选 `VILAUS_SMOKE_BASE_URL`、`VILAUS_SMOKE_MODEL`，注入测试设置里的 `claudeCode.environmentVariables`；没配就拒绝运行（`--subscription` 才用登录的账号）
 - [x] smoke 加了 diff 标签页的接受 / 拒绝两项
 - [x] smoke 再加：点聊天里的文件提及，Monaco 标签页打开该文件；计划模式下计划预览进内容面板
 - [x] 收尾时补的：语言配置（Ctrl+/ 注释、括号、缩进，取自 Monaco 自带的语言定义）；插件进程崩溃重启后，打开的文件连同未保存的修改自动回来；Markdown 预览显示工作区里的图片（`ccw://img`，只放行工作区内的图片文件）和 https 图片；只打包 Dark+ / Light+ 两套 Shiki 主题
@@ -140,7 +140,7 @@ CLI 和窗口
 - [ ] 单实例：第二次启动时，参数转发给已经在运行的实例
 - [ ] 标题栏「文件夹 ▾」：切换或打开别的文件夹（开新窗口）；bridge 拦截插件的 `open_folder*`，改走壳的文件夹选择 / 新窗口
 - [ ] 以管理员身份运行的实例用单独的 Chromium 数据目录，但共用配置，写入由 main 串行处理
-- [ ] `window.registerUriHandler` 接到 ccshell:// 协议
+- [ ] `window.registerUriHandler` 接到 vilaus:// 协议
 
 API 接口（`features/providers`）
 
@@ -150,7 +150,7 @@ API 接口（`features/providers`）
 - [ ] 内置预设（数据文件）：Claude 订阅、Anthropic API、DeepSeek、Kimi、GLM、Qwen…，用户可以增删
 - [ ] 密钥用 Electron `safeStorage`（Windows DPAPI）加密存放，绝不明文写进 settings.json，绝不进安装包
 - [ ] 从 VSCodium 的 DeepSeek 配置档（`profiles\-68229e90`）导入成一个"DeepSeek"接口，导入后密钥立即加密
-- [ ] "为此接口创建快捷方式"（比如 `ccshell.exe --provider deepseek`）
+- [ ] "为此接口创建快捷方式"（比如 `Vilausity.exe --provider deepseek`）
 - [ ] 单元测试：接口生成的环境变量；smoke：切到一个兼容接口，新对话的子进程环境变量正确（只检查环境，不实际调用）
 
 插件管理（脱离 VSCodium）
@@ -163,7 +163,7 @@ API 接口（`features/providers`）
 
 ## M5 打包和发布：未开始
 
-- [ ] electron-builder 打 NSIS 安装包：可以选只装当前用户，或装到 Program Files 给所有用户；建开始菜单和桌面快捷方式；卸载时默认保留 `%APPDATA%\ccshell`
+- [ ] electron-builder 打 NSIS 安装包：可以选只装当前用户，或装到 Program Files 给所有用户；建开始菜单和桌面快捷方式；卸载时默认保留 `%APPDATA%\Vilausity`
 - [ ] 安装包里不含任何 Anthropic 代码（插件首次启动时从 Open VSX 下载）；不出便携版
 - [ ] 目标环境：干净的 Windows 10/11 x64，只有安装包和网络；不需要 VS Code / VSCodium、单独的 Claude Code CLI、Node、Python、Git
 - [ ] 发布到 GitHub Releases，新版本手动下载安装（不做自动更新）；不做代码签名，发布说明写清楚 SmartScreen 怎么放行

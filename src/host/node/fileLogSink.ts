@@ -38,7 +38,7 @@ export class FileLogSink implements LogSink {
     this.buffer = [];
     this.writing = this.writing.then(() =>
       fs.promises.appendFile(this.filePath, chunk, 'utf8').catch((error: unknown) => {
-        process.stderr.write(`[ccshell] cannot write log ${this.filePath}: ${String(error)}\n`);
+        process.stderr.write(`[vilaus] cannot write log ${this.filePath}: ${String(error)}\n`);
       }),
     );
     return this.writing;

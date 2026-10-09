@@ -41,7 +41,7 @@ export function settingsFileGlob(filePath: string): string {
   return /^[\w.-]+$/.test(folder) ? `${folder}/${name}` : name;
 }
 /** Identifies the schema of settings.json for the JSON language service. */
-const SETTINGS_SCHEMA_URI = 'ccshell://schemas/settings.json';
+const SETTINGS_SCHEMA_URI = 'vilaus://schemas/settings.json';
 
 export const settingsModule: ShellModule = {
   id: 'settings',

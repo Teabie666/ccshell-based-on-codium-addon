@@ -209,7 +209,7 @@ export interface ContextMenuItemDto {
  * A file's text on disk, read-only, whatever its editor holds (the file URI with this
  * scheme): the left side of "Compare Active File with Saved".
  */
-export const SAVED_FILE_SCHEME = 'ccshell-saved';
+export const SAVED_FILE_SCHEME = 'vilaus-saved';
 
 /** 0-based, like `vscode.Position`. */
 export interface PositionDto {
@@ -422,9 +422,9 @@ export type MainApiForRenderer = {
   'app.setTheme': (p: { id: string }) => ThemeData;
   /** Restarts the extension host after a crash. */
   'app.restartExtensionHost': (p: void) => void;
-  /** The `ccshell.language` setting and the language this run shows. */
+  /** The `vilaus.language` setting and the language this run shows. */
   'app.getLanguage': (p: void) => { setting: UiLanguageSetting; running: UiLanguage };
-  /** Saves `ccshell.language`; main answers with `languageChanged` if a restart is needed. */
+  /** Saves `vilaus.language`; main answers with `languageChanged` if a restart is needed. */
   'app.setLanguage': (p: { setting: UiLanguageSetting }) => void;
   /** Quits and starts again with the same arguments (open conversations are restored). */
   'app.relaunch': (p: void) => void;
@@ -471,16 +471,16 @@ export interface MainEventMessage<K extends keyof MainEventsForRenderer = keyof 
  * `window.open('about:blank', name)` with a name starting with this opens an auxiliary
  * window: a content pane tab moved out of the main window (main allows only these).
  */
-export const AUX_WINDOW_NAME_PREFIX = 'ccshell-aux-';
+export const AUX_WINDOW_NAME_PREFIX = 'vilaus-aux-';
 
 /** IPC channel names used by the preload bridge. */
 export const IpcChannel = {
   /** renderer -> main request/response, carries an RPC envelope. */
-  Rpc: 'ccshell:rpc',
+  Rpc: 'vilaus:rpc',
   /** main -> renderer, transfers the extension host MessagePort. */
-  ExtHostPort: 'ccshell:exthost-port',
+  ExtHostPort: 'vilaus:exthost-port',
   /** main -> renderer events (MainEventsForRenderer). */
-  Event: 'ccshell:event',
+  Event: 'vilaus:event',
 } as const;
 
 // ---------------------------------------------------------------------------

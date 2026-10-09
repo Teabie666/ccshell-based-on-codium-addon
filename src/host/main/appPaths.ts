@@ -1,6 +1,6 @@
 /**
- * Where ccshell keeps its data. Everything the app writes lives under one root
- * (`%APPDATA%\ccshell` by default) so an install in Program Files stays read-only.
+ * Where vilaus keeps its data. Everything the app writes lives under one root
+ * (`%APPDATA%\vilaus` by default) so an install in Program Files stays read-only.
  */
 
 import * as fs from 'node:fs';

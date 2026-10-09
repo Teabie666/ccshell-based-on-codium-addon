@@ -1,5 +1,5 @@
 @echo off
-rem Development launcher: double-click in Explorer to build and start ccshell.
+rem Development launcher: double-click in Explorer to build and start vilaus.
 rem Extra arguments are passed through, e.g.  run-dev.cmd C:\path\to\project
 cd /d "%~dp0"
 call npm run build --silent

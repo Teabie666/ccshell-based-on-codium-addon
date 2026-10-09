@@ -1,7 +1,7 @@
 /**
  * Loads Monaco on first use: the editor core with all its editor features, its JSON
  * language service (for settings.json), none of its other languages (Shiki highlights;
- * ccshell runs no other language services), its stylesheet, its workers, and its own UI
+ * vilaus runs no other language services), its stylesheet, its workers, and its own UI
  * strings in the display language.
  */
 

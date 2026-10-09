@@ -92,7 +92,7 @@ export class Highlighting {
   /** Builds the Monaco theme for `theme`, applies it, and re-tokenizes open models. */
   async setTheme(theme: ThemeData): Promise<void> {
     const highlighter = await this.load();
-    const name = `ccshell-${theme.id}`;
+    const name = `vilaus-${theme.id}`;
     // Only these two themes are ever used; `bundledThemes` would ship every Shiki theme.
     const tokenTheme = (await (isLight(theme) ? import('shiki/themes/light-plus.mjs') : import('shiki/themes/dark-plus.mjs'))).default;
     const colors: Record<string, string> = {};

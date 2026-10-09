@@ -1,4 +1,4 @@
-/** The `vscode.workspace` namespace. ccshell has exactly one workspace folder per window. */
+/** The `vscode.workspace` namespace. vilaus has exactly one workspace folder per window. */
 
 import * as path from 'node:path';
 import type * as vscode from 'vscode';

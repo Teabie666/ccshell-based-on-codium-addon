@@ -1,5 +1,5 @@
 /**
- * `window.tabGroups`. ccshell has two editor groups: the conversation area (column One)
+ * `window.tabGroups`. vilaus has two editor groups: the conversation area (column One)
  * and the content pane (column Two). The extension inspects them to find its own panels
  * (TabInputWebview) and diff editors (TabInputTextDiff), and closes tabs through
  * `tabGroups.close`.

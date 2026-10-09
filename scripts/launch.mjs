@@ -1,5 +1,5 @@
 // Starts the built app in development, from a clean environment.
-//   node scripts/launch.mjs [ccshell args...]
+//   node scripts/launch.mjs [vilaus args...]
 // VS Code-family extension hosts (and agents running inside them) export
 // ELECTRON_RUN_AS_NODE=1, which would make electron.exe behave as plain Node.
 import { spawn } from 'node:child_process';

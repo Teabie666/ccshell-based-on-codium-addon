@@ -195,7 +195,7 @@ export class AuxWindow implements IDisposable {
 
   setTitle(title: string): void {
     this.label.textContent = title;
-    this.window.document.title = `${title} - ccshell`;
+    this.window.document.title = `${title} - Vilausity`;
   }
 
   setDirty(dirty: boolean): void {

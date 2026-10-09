@@ -15,7 +15,7 @@ mkdirSync(workspace, { recursive: true });
 // English, whatever the system language: the steps look for English labels. The last
 // step switches to Chinese.
 const settingsFile = path.join(dataDir, 'settings.json');
-writeFileSync(settingsFile, JSON.stringify({ 'claudeCode.hideOnboarding': true, 'ccshell.language': 'en' }), 'utf8');
+writeFileSync(settingsFile, JSON.stringify({ 'claudeCode.hideOnboarding': true, 'vilaus.language': 'en' }), 'utf8');
 
 const env = { ...process.env };
 for (const name of Object.keys(env)) {
@@ -171,25 +171,25 @@ async function rightClick(locator) {
 /** Runs `fn` while native menus are recorded instead of shown (a shown menu blocks the test). */
 async function withRecordedMenus(fn) {
   await app.evaluate(({ Menu }) => {
-    globalThis.ccshellRealPopup = Menu.prototype.popup;
+    globalThis.vilausRealPopup = Menu.prototype.popup;
     Menu.prototype.popup = function () {
-      globalThis.ccshellLastMenu = this;
+      globalThis.vilausLastMenu = this;
     };
   });
   try {
     return await fn();
   } finally {
     await app.evaluate(({ Menu }) => {
-      Menu.prototype.popup = globalThis.ccshellRealPopup;
-      delete globalThis.ccshellLastMenu;
+      Menu.prototype.popup = globalThis.vilausRealPopup;
+      delete globalThis.vilausLastMenu;
     });
   }
 }
 const recordedMenu = () =>
-  app.evaluate(() => globalThis.ccshellLastMenu?.items.map((item) => (item.type === 'separator' ? '---' : item.label)));
+  app.evaluate(() => globalThis.vilausLastMenu?.items.map((item) => (item.type === 'separator' ? '---' : item.label)));
 const clickRecordedMenuItem = (label) =>
   app.evaluate((_electron, label) => {
-    globalThis.ccshellLastMenu.items.find((item) => item.label === label).click();
+    globalThis.vilausLastMenu.items.find((item) => item.label === label).click();
   }, label);
 const activeConversation = () => page.locator('#main .panel:not([hidden]) .webview-frame');
 /** The extension's webview/context items, as an English UI shows them (sorted by title). */
@@ -454,7 +454,7 @@ await step('after an extension host crash and restart, open files come back with
   await waitFor(async () => (await page.locator('#content-pane .content-tab.dirty').count()) === 1, 5000, 'the dirty tab');
 
   const killed = await app.evaluate(({ app: electronApp }) => {
-    const host = electronApp.getAppMetrics().find((metric) => metric.name === 'ccshell extension host');
+    const host = electronApp.getAppMetrics().find((metric) => metric.name === 'vilaus extension host');
     if (host) process.kill(host.pid);
     return host !== undefined;
   });
@@ -491,7 +491,7 @@ await step('Ctrl+, opens the settings editor; Editor: Font Size applies to the e
   await page.locator('#content-pane .settings-search').fill('font size');
   await waitFor(() => settingRow('editor.fontSize').isVisible(), 5000, 'the Editor: Font Size row');
   if (await settingRow('editor.minimap.enabled').isVisible()) throw new Error('search did not filter');
-  // The extension's settings are listed, except those for VS Code integration ccshell lacks.
+  // The extension's settings are listed, except those for VS Code integration vilaus lacks.
   await page.locator('#content-pane .settings-search').fill('');
   await waitFor(async () => (await settingRow('claudeCode.useCtrlEnterToSend').count()) === 1, 10_000, "the extension's settings");
   if ((await settingRow('claudeCode.useTerminal').count()) !== 0) throw new Error('claudeCode.useTerminal is listed');
@@ -646,8 +646,8 @@ await step('Configure Display Language switches the shell to Chinese after a res
   await page.locator('.quick-input-filter').press('Enter');
   const restart = page.locator('.toast .button', { hasText: 'Restart' });
   await waitFor(async () => (await restart.count()) > 0, 5000, 'the restart prompt');
-  const saved = JSON.parse(readFileSync(settingsFile, 'utf8'))['ccshell.language'];
-  if (saved !== 'zh-cn') throw new Error(`ccshell.language is ${saved}`);
+  const saved = JSON.parse(readFileSync(settingsFile, 'utf8'))['vilaus.language'];
+  if (saved !== 'zh-cn') throw new Error(`vilaus.language is ${saved}`);
 
   // What the Restart button does (app.relaunch), by hand: Playwright cannot follow a relaunch.
   await app.close();

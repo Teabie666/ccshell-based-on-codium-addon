@@ -11,5 +11,5 @@ export const DEFAULT_FONTS = {
   editorWeight: 'normal',
 } as const;
 
-/** The color theme when `ccshell.theme` is not set. */
+/** The color theme when `vilaus.theme` is not set. */
 export const DEFAULT_THEME_ID = 'dark-modern';

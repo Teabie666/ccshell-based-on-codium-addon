@@ -1,8 +1,8 @@
-# ccshell
+# Vilausity
 
 围绕 Claude Code 插件的轻量工作台（代号，正式名字最后定）。在 VS Code 之外，原样运行官方的 Claude Code VS Code 插件，再配上 VS Code 的编辑器内核 Monaco，用 Claude app 式的窗口结构加上 VS Code 的视觉风格。
 
-> 插件本身（`anthropic.claude-code`）是 Anthropic 的专有软件，ccshell 不包含、不修改、不分发它，运行时从本机已安装的位置加载（M4 起从 Open VSX 下载）。
+> 插件本身（`anthropic.claude-code`）是 Anthropic 的专有软件，Vilausity 不包含、不修改、不分发它，运行时从本机已安装的位置加载（M4 起从 Open VSX 下载）。
 
 ## 开发
 
@@ -25,9 +25,9 @@ npm run capture-themes   # 从本机 VSCodium 重新抓取内置主题到 resour
 electron . [文件夹] [--folder <dir>] [--extension-dir <dir>] [--user-data-dir <dir>] [--theme <id>] [--log-level <lv>] [--devtools] [--secondary-display]
 ```
 
-界面语言（英文 / 简体中文）：命令面板里的"配置显示语言"（Configure Display Language），或者在 settings.json 里设 `"ccshell.language"`：`"auto"`（默认，跟随系统）、`"zh-cn"`、`"en"`，重启后生效。
+界面语言（英文 / 简体中文）：命令面板里的"配置显示语言"（Configure Display Language），或者在 settings.json 里设 `"vilaus.language"`：`"auto"`（默认，跟随系统）、`"zh-cn"`、`"en"`，重启后生效。
 
-数据默认在 `%APPDATA%\ccshell\`：`settings.json`、`state\`、`logs\<本次启动时间>\`（`main.log`、`exthost.log`、`shim-unimplemented.log`、`output\`）。
+数据默认在 `%APPDATA%\Vilausity\`：`settings.json`、`state\`、`logs\<本次启动时间>\`（`main.log`、`exthost.log`、`shim-unimplemented.log`、`output\`）。
 
 ## 文档
 
@@ -41,4 +41,4 @@ electron . [文件夹] [--folder <dir>] [--extension-dir <dir>] [--user-data-dir
 
 Copyright (C) 2026 Teabie
 
-ccshell 以 [GNU General Public License v3.0 或更高版本](LICENSE)（GPL-3.0-or-later）发布。许可证只覆盖本仓库的代码；Claude Code 插件不在其中，它的条款由 Anthropic 规定。
+Vilausity 以 [GNU General Public License v3.0 或更高版本](LICENSE)（GPL-3.0-or-later）发布。许可证只覆盖本仓库的代码；Claude Code 插件不在其中，它的条款由 Anthropic 规定。

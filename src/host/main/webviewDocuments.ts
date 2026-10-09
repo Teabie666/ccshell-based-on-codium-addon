@@ -1,5 +1,5 @@
 /**
- * Holds the HTML each webview should show and renders it with the ccshell bootstrap
+ * Holds the HTML each webview should show and renders it with the vilaus bootstrap
  * injected. The bootstrap (src/host/webview/bootstrap.ts) provides `acquireVsCodeApi`,
  * theme variables and VS Code's default webview styles before the extension's own
  * scripts run, mirroring what VS Code's `pre/index.html` does.

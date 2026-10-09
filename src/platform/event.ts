@@ -27,7 +27,7 @@ interface ListenerEntry<T> {
 }
 
 let unexpectedErrorHandler: (error: unknown) => void = (error) => {
-  console.error('[ccshell] event listener threw:', error);
+  console.error('[vilaus] event listener threw:', error);
 };
 
 /**

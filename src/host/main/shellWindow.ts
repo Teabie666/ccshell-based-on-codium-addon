@@ -144,7 +144,7 @@ export class ShellWindow extends Disposable {
       minWidth: 640,
       minHeight: 400,
       show: false,
-      title: 'ccshell',
+      title: 'Vilausity',
       backgroundColor: options.theme.variables['vscode-editor-background'] ?? '#1f1f1f',
       titleBarStyle: 'hidden',
       titleBarOverlay: overlayColors(options.theme),

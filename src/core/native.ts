@@ -20,7 +20,7 @@ interface PreloadBridge {
 
 declare global {
   interface Window {
-    readonly ccshellNative: PreloadBridge;
+    readonly vilausNative: PreloadBridge;
   }
 }
 
@@ -33,16 +33,16 @@ export class NativeApi {
     method: M,
     params: ParamsOf<MainApiForRenderer, M>,
   ): Promise<ResultOf<MainApiForRenderer, M>> {
-    return window.ccshellNative.invoke(method, params) as Promise<ResultOf<MainApiForRenderer, M>>;
+    return window.vilausNative.invoke(method, params) as Promise<ResultOf<MainApiForRenderer, M>>;
   }
 
   get platform(): string {
-    return window.ccshellNative.platform;
+    return window.vilausNative.platform;
   }
 
   /** The disk path of a dropped file, or '' when it has none. */
   pathForFile(file: File): string {
-    return window.ccshellNative.pathForFile(file);
+    return window.vilausNative.pathForFile(file);
   }
 
   on<K extends keyof MainEventsForRenderer>(name: K, listener: (payload: MainEventsForRenderer[K]) => void): IDisposable {

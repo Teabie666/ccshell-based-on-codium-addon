@@ -25,7 +25,7 @@ interface WebviewRequest {
 
 export interface BridgeOptions {
   /**
-   * Whether ccshell can show diff editors. Until M2 it cannot, and the webview must
+   * Whether vilaus can show diff editors. Until M2 it cannot, and the webview must
    * then not wait on `open_diff`, or it auto-rejects every edit (see below).
    */
   readonly diffEditorAvailable: () => boolean;

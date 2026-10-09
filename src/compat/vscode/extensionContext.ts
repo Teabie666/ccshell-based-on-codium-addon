@@ -62,7 +62,7 @@ class MemorySecretStorage {
   }
 }
 
-/** Terminal environment contributions; ccshell has no integrated terminal, so this only records. */
+/** Terminal environment contributions; vilaus has no integrated terminal, so this only records. */
 class EnvironmentVariableCollection {
   persistent = true;
   description: string | undefined;
