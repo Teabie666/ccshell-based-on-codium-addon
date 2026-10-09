@@ -6,11 +6,11 @@
 
 ## 下一步
 
-1. 试用 M1.5，根据反馈调整后再开始 M2
+1. M2 收尾：真实会话验证 diff 审批和计划预览、smoke 改 API 模式、标签页弹出成独立窗口、中文译文，然后试用
 
 每个阶段结束都要做：typecheck、`npm test`、`node tests/ui.mjs`（动了 bridge / compat 再跑 `npm run smoke`）；看最新一次的 `shim-unimplemented.log`；确认没往 `C:\Program Files\VSCodium` 写任何东西、git 里没有密钥；用屏幕工具截图，跟 VSCodium 里的同一界面对比；用 `run-dev.cmd` 试用。
 
-测试现状（2026-10-09）：单元 115/115，语言包 0 条缺译，界面 11/11（M1.5 后）；smoke 7/7（M1 后跑的，M1.5 没动 bridge / compat）。
+测试现状（2026-10-09）：单元 115/115，语言包 33 条缺译（M2 新加的），界面 20/20（M2 进行中）；smoke 7/7（M1 后跑的；M2 动了 bridge 和 compat，还没重跑）。
 
 ## M0 技术验证：完成（2026-10-08）
 
@@ -58,28 +58,29 @@
 - [x] 测试：nls 的单元测试；界面测试固定英文跑，最后在命令面板里切到中文、重启，检查命令面板和右键菜单
 - [x] 试用（2026-10-09）。试用后的改动：代码里只写英文，中文移进单独的语言包 `src/nls/zh-cn.json`，译文可以晚点批量补；`npm run nls` 检查缺的和过时的条目
 
-## M2 内容面板 + Monaco：未开始
+## M2 内容面板 + Monaco：进行中（2026-10-09 开始）
 
-要加的依赖：`monaco-editor`、`shiki` + `@shikijs/monaco`、`marked` + `dompurify`。Monaco 的 worker 作为 esbuild 的额外入口单独打包（[ADR 0003](adr/0003-esbuild-for-all-bundles.md)）。
+依赖：`monaco-editor` 0.57、`shiki` 4.5（没用 `@shikijs/monaco`：它的类型依赖没装的 `monaco-editor-core`，用到的那点逻辑自己写在 `features/editor/highlighting.ts`）、`marked` + `dompurify`。构建改动见 [ADR 0003](adr/0003-esbuild-for-all-bundles.md) 的 M2 补充；文档和编辑器的设计见 [ARCHITECTURE.md](ARCHITECTURE.md)。
 
-- [ ] 内容面板：有东西时自动打开，`Ctrl+\` 开关，宽度可拖，标签页
-- [ ] core 的 views / editors 贡献点：按文件类型或 scheme 注册内容面板里的编辑器
-- [ ] Monaco 标签页：Shiki 高亮（dark-plus / light-plus，跟主题数据走），有行号；Monaco 自己的界面文字（查找、右键菜单）按界面语言加载它的语言包
-- [ ] 新加的界面文字都写中英两份（M1.5 的规矩，见 `docs/design.md` 的"文案"）
-- [ ] 打开文件：聊天里点文件（`open_file` → `showTextDocument`）、Ctrl+P 快速打开、拖进窗口
-- [ ] Ctrl+S 保存，未保存标记；磁盘上被 Claude 改了：没改过就自动重新载入，改过就提示冲突
-- [ ] compat 的文本文档（`textDocuments.ts`）跟 Monaco 模型对上：open / change / save / close 事件
-- [ ] Markdown：默认显示渲染后的预览，可以切到源码
-- [ ] 计划预览：插件的 `claudePlanPreview` webview（自带评论）作为一个标签页
-- [ ] diff 标签页（ADR 0002 改成真实实现）
-  - [ ] `vscode.diff` 打开 Monaco DiffEditor 标签页，同时往 `TabGroupsModel` 里加一个 `TabInputTextDiff(left, right)`，它的 close 回调负责关掉 diff 标签页
-  - [ ] 右侧可编辑，改动触发 `workspace.onDidChangeTextDocument`
-  - [ ] "接受 / 拒绝"按钮：先 `tabs.setActive(该标签)`，再执行 `claude-vscode.acceptProposedDiff` / `rejectProposedDiff`
-  - [ ] `extensionHost.ts` 里 `ClaudeWebviewBridge` 的 `diffEditorAvailable` 改成 true，bridge 不再挂起 `open_diff`；更新 ADR 0002 的状态
-  - [ ] 聊天里的内嵌审批照常能用
-- [ ] 选区同步：`window.activeTextEditor`、`visibleTextEditors`、`showTextDocument`、`onDidChangeTextEditorSelection` 接到 Monaco（现在是 `compat/vscode/window.ts` 里 `createEditorHandle` 的占位），聊天框显示"已选 N 行"
+- [x] 内容面板：有东西时自动打开，`Ctrl+\` 和标题栏右侧按钮开关，宽度可拖，标签页（预览标签页、脏标记、中键关闭、焦点在面板里时 Ctrl+W / Ctrl+Tab 作用于面板）
+- [x] core 的 editors 贡献点（`core/editors.ts`），以及按区域分发插件 webview 面板（`core/panels.ts`）
+- [x] Monaco 标签页：Shiki 高亮（语法色 Dark+ / Light+，编辑器色取主题变量，切主题跟着变），有行号；Monaco 自己的界面文字按界面语言加载它的中文包
+- [ ] 新加的界面文字都写中英两份：英文已写，中文 33 条待补（`npm run nls -- --todo`）
+- [x] 打开文件：聊天里点文件（`open_file` → `showTextDocument`）、Ctrl+P / Ctrl+E 快速打开（模糊匹配）、拖进窗口（拖文件还没自动测）
+- [x] Ctrl+S 保存，未保存标记，关闭时问是否保存；磁盘上被 Claude 改了：没改过就自动重新载入，改过就在编辑器上方提示
+- [x] compat 的文本文档跟 Monaco 模型对上：open / change（真实增量）/ will-save / save / close 事件
+- [x] Markdown：默认显示渲染后的预览（代码块用 Shiki 上色），可以切到源码（Ctrl+Shift+V）
+- [ ] 计划预览：插件的 `claudePlanPreview` webview 作为内容面板的标签页（路由已做，还没在真实会话里看到）
+- [x] diff 标签页（ADR 0002 已被取代）
+  - [x] `vscode.diff` 打开 Monaco DiffEditor 标签页，同时往 `tabGroups` 里加 `TabInputTextDiff(left, right)`，插件 `tabGroups.close` 时关掉标签页
+  - [x] 右侧可编辑，改动触发 `workspace.onDidChangeTextDocument`
+  - [x] "接受 / 拒绝"按钮：先把该标签设为 active，再执行 `claude-vscode.acceptProposedDiff` / `rejectProposedDiff`
+  - [x] bridge 不再挂起 `open_diff`（`diffEditorAvailable: () => true`）
+  - [ ] 用真实会话验证：提议改动 → diff 标签页 → 接受 / 拒绝 / 聊天里的内嵌审批（smoke 或手动试用）
+  - [x] 额外："Compare Active File with Saved"（跟磁盘上的版本比较），界面测试靠它覆盖 diff 标签页
+- [x] 选区同步：`activeTextEditor`、`visibleTextEditors`、`showTextDocument`、`onDidChangeTextEditorSelection` 接到 Monaco，聊天框能带上当前文件
 - [ ] 标签页可以弹出成独立窗口
-- [ ] 日志进面板：`claude-vscode.showLogs` 和 bridge 拦截的 `open_output_panel` 都在内容面板里打开日志
+- [x] 日志进面板：`claude-vscode.showLogs` 和聊天里的"打开输出"都调 `outputChannel.show()`，在内容面板打开日志文件（不需要 bridge 拦截）
 - [ ] smoke 改成 API 模式：接口地址、key、模型从环境变量读，注入测试设置里的 `claudeCode.environmentVariables`，不再用登录的订阅账号（条款只允许脚本走 API key；现在没配就拒绝运行）。用哪家的 key 到时候定
 - [ ] smoke 加两项：diff 标签页出现 → 点接受后文件改了，走一遍拒绝文件没变；点文件链接，Monaco 标签页显示高亮内容
 
