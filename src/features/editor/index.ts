@@ -17,6 +17,7 @@ import {
   IExtensionHost,
   IKeybindings,
   ILayout,
+  ISettings,
   IThemes,
 } from '../../core/serviceIds';
 import { createServiceId } from '../../core/services';
@@ -32,10 +33,12 @@ import type { ContentPane } from '../contentPane/contentPane';
 import { DiffEditorPane, type DiffInputData } from './diffEditorPane';
 import { Highlighting } from './highlighting';
 import { t } from './messages';
-import { loadMonaco, type MonacoApi } from './monaco';
+import { loadMonaco, type JsonLanguage, type MonacoApi } from './monaco';
 import { TextEditorPane, editorFontOptions, type TextInputData } from './textEditorPane';
 import { basename, shortDiffTitle } from './titles';
-import { TextModels } from './textModels';
+import { TextModels, type TextModel } from './textModels';
+import { diffEditorOptions, editorOptions, editorSettingDefinitions, indentation, isEditorSetting } from './editorSettings';
+import type { SettingsService } from '../../core/settings';
 
 /** The input type of documents shown in a text editor (other modules may claim some, e.g. Markdown). */
 export const TEXT_INPUT = 'text';
@@ -46,6 +49,13 @@ function tabInputId(tabId: string): string {
   return `tab:${tabId}`;
 }
 
+
+/** A JSON schema and the documents it applies to (their URIs). */
+export interface JsonSchemaAssociation {
+  readonly uri: string;
+  readonly fileMatch: readonly string[];
+  readonly schema: Record<string, unknown>;
+}
 
 export class TextEditorService {
   private loaded: Promise<{ monaco: MonacoApi; models: TextModels; highlighting: Highlighting }> | undefined;
@@ -60,17 +70,76 @@ export class TextEditorService {
     private readonly contentPane: ContentPane,
     private readonly themes: ThemeService,
     private readonly dialogs: Dialogs,
+    private readonly settings: SettingsService,
     private readonly logger: ILogger,
   ) {}
+
+  private json: JsonLanguage | undefined;
+  private jsonSchemas: readonly JsonSchemaAssociation[] = [];
+
+  /** JSON schemas for documents by URI (e.g. settings.json's): completion, hovers, validation. */
+  setJsonSchemas(schemas: readonly JsonSchemaAssociation[]): void {
+    this.jsonSchemas = schemas;
+    this.applyJsonSchemas();
+  }
+
+  private applyJsonSchemas(): void {
+    this.json?.jsonDefaults.setDiagnosticsOptions({
+      validate: true,
+      // VS Code's settings.json and most JSON configs allow comments and trailing commas.
+      allowComments: true,
+      comments: 'ignore',
+      trailingCommas: 'ignore',
+      enableSchemaRequest: false,
+      schemaValidation: 'warning',
+      schemas: this.jsonSchemas.map((association) => ({
+        uri: association.uri,
+        fileMatch: [...association.fileMatch],
+        schema: association.schema,
+      })),
+    });
+  }
+
+  /** Options of a text editor: the settings, and the theme's fonts. */
+  readonly textOptions = (): Record<string, unknown> => ({ ...editorFontOptions(), ...editorOptions(this.settings) });
+
+  /** Options of a diff editor: a text editor's, and the diff settings. */
+  readonly diffOptions = (): Record<string, unknown> => ({ ...this.textOptions(), ...diffEditorOptions(this.settings) });
+
+  /** Settings or fonts changed: every open editor and model follows. */
+  applySettings(): void {
+    const text = this.textOptions();
+    for (const pane of this.panes.values()) {
+      pane.editor.updateOptions(text);
+    }
+    const diff = this.diffOptions();
+    for (const pane of this.diffPanes) {
+      pane.editor.updateOptions(diff);
+    }
+    this.models?.forEachModel((model) => this.applyIndentation(model));
+  }
+
+  private applyIndentation(model: TextModel): void {
+    const { tabSize, insertSpaces, detect } = indentation(this.settings);
+    if (detect) {
+      model.detectIndentation(insertSpaces, tabSize);
+    } else {
+      model.updateOptions({ tabSize, insertSpaces });
+    }
+  }
 
   /** Loads Monaco and the highlighter (once). Editors can only be created after this. */
   ready(): Promise<{ monaco: MonacoApi; models: TextModels; highlighting: Highlighting }> {
     this.loaded ??= (async () => {
       const started = performance.now();
-      const monaco = await loadMonaco(getUiLanguage());
+      const { monaco, json } = await loadMonaco(getUiLanguage());
+      this.json = json;
+      this.applyJsonSchemas();
       const highlighting = new Highlighting(monaco, this.logger.child('highlighting'));
       await highlighting.setTheme(this.themes.current);
-      const models = new TextModels(monaco, highlighting, this.connection, this.logger.child('models'));
+      const models = new TextModels(monaco, highlighting, this.connection, this.logger.child('models'), (model) =>
+        this.applyIndentation(model),
+      );
       this.monaco = monaco;
       this.models = models;
       this.logger.info(`editor loaded in ${Math.round(performance.now() - started)} ms`);
@@ -147,6 +216,7 @@ export class TextEditorService {
       this.connection,
       this.dialogs,
       input.label,
+      this.diffOptions,
     );
     this.diffPanes.add(pane);
     const dispose = pane.dispose.bind(pane);
@@ -183,7 +253,17 @@ export class TextEditorService {
       throw new Error('text editors are not loaded yet; open documents through ITextEditors');
     }
     const data = input.data as TextInputData;
-    const pane = new TextEditorPane(this.monaco, container, data, host, this.models, this.connection, this.dialogs, input.label);
+    const pane = new TextEditorPane(
+      this.monaco,
+      container,
+      data,
+      host,
+      this.models,
+      this.connection,
+      this.dialogs,
+      input.label,
+      this.textOptions,
+    );
     this.panes.set(data.editorId, pane);
     const dispose = pane.dispose.bind(pane);
     pane.dispose = () => {
@@ -198,13 +278,21 @@ export class TextEditorService {
       return;
     }
     void this.ready().then(({ highlighting }) => highlighting.setTheme(this.themes.current));
-    const fonts = editorFontOptions();
-    for (const pane of this.panes.values()) {
-      pane.editor.updateOptions(fonts);
+    // The theme carries the fonts.
+    this.applySettings();
+  }
+
+  /** Selects the first occurrence of `text` in the open editor of `uri`, and shows it. */
+  revealText(uri: string, text: string): void {
+    const pane = [...this.panes.values()].find((candidate) => candidate.uri === uri);
+    const model = pane?.editor.getModel();
+    const match = model?.findMatches(text, false, false, true, null, false)[0];
+    if (!pane || !match) {
+      return;
     }
-    for (const pane of this.diffPanes) {
-      pane.editor.updateOptions(fonts);
-    }
+    pane.editor.setSelection(match.range);
+    pane.editor.revealRangeInCenter(match.range);
+    pane.focus();
   }
 
   /** The extension closed one of its tabs. */
@@ -298,7 +386,16 @@ export const editorModule: ShellModule = {
     const contextKeys = services.get(IContextKeys);
     const themes = services.get(IThemes);
 
-    const editors = new TextEditorService(connection, contentPane, themes, services.get(IDialogs), logger);
+    const settings = services.get(ISettings);
+    const editors = new TextEditorService(connection, contentPane, themes, services.get(IDialogs), settings, logger);
+    subscriptions.add(settings.register(editorSettingDefinitions()));
+    subscriptions.add(
+      settings.onDidChange((keys) => {
+        if (keys.some(isEditorSetting)) {
+          editors.applySettings();
+        }
+      }),
+    );
     let reopenAfterRestart: ReopenItem[] = [];
     subscriptions.add(services.register(ITextEditors, editors));
     subscriptions.add(

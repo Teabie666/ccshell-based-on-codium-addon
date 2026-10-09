@@ -1,33 +1,50 @@
 /**
- * Loads Monaco on first use: the editor core with all its editor features but none of its
- * languages (Shiki highlights; ccshell runs no language services), its stylesheet, its
- * worker, and its own UI strings in the display language.
+ * Loads Monaco on first use: the editor core with all its editor features, its JSON
+ * language service (for settings.json), none of its other languages (Shiki highlights;
+ * ccshell runs no other language services), its stylesheet, its workers, and its own UI
+ * strings in the display language.
  */
 
 import type { UiLanguage } from '../../platform/nls';
 
 export type MonacoApi = typeof import('monaco-editor/editor/editor.api');
+export type JsonLanguage = typeof import('monaco-editor/languages/features/json/register');
 
-let loading: Promise<MonacoApi> | undefined;
+let loading: Promise<{ monaco: MonacoApi; json: JsonLanguage }> | undefined;
 
-export function loadMonaco(language: UiLanguage): Promise<MonacoApi> {
+export function loadMonaco(language: UiLanguage): Promise<{ monaco: MonacoApi; json: JsonLanguage }> {
   loading ??= load(language);
   return loading;
 }
 
-async function load(language: UiLanguage): Promise<MonacoApi> {
+async function load(language: UiLanguage): Promise<{ monaco: MonacoApi; json: JsonLanguage }> {
   const stylesheet = addStylesheet('monaco.css');
   // Monaco reads its strings while its modules evaluate, so the pack must come first.
   if (language === 'zh-cn') {
     await import('monaco-editor/nls/lang/zh-cn');
   }
   (globalThis as { MonacoEnvironment?: unknown }).MonacoEnvironment = {
-    getWorker: (_moduleId: string, label: string) => new Worker(new URL('editor.worker.js', document.baseURI), { name: label }),
+    getWorker: (_moduleId: string, label: string) =>
+      new Worker(new URL(label === 'json' ? 'json.worker.js' : 'editor.worker.js', document.baseURI), { name: label }),
   };
   const monaco = await import('monaco-editor/editor/editor.api');
   await import('monaco-editor/features/register.all');
+  const json = await import('monaco-editor/languages/features/json/register');
+  // Shiki tokenizes JSON too; the language service brings completion, hovers and validation.
+  json.jsonDefaults.setModeConfiguration({
+    documentFormattingEdits: true,
+    documentRangeFormattingEdits: true,
+    completionItems: true,
+    hovers: true,
+    documentSymbols: true,
+    tokens: false,
+    colors: true,
+    foldingRanges: true,
+    diagnostics: true,
+    selectionRanges: true,
+  });
   await stylesheet;
-  return monaco;
+  return { monaco, json };
 }
 
 function addStylesheet(href: string): Promise<void> {

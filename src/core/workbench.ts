@@ -31,11 +31,13 @@ import {
   IMenus,
   INative,
   IPanels,
+  ISettings,
   IThemes,
   IWebviewFrames,
   IWorkspace,
 } from './serviceIds';
 import { ServiceRegistry } from './services';
+import { SettingsService } from './settings';
 import { ThemeService } from './themes';
 import { WebviewFrames } from './webviewFrames';
 
@@ -48,6 +50,8 @@ export async function startWorkbench(modules: readonly ShellModule[]): Promise<v
   native.onExtensionHostPort((port) => connection.connect(port));
 
   const init = await native.call('app.getInitData', undefined);
+  const settings = new SettingsService(native);
+  await settings.load();
   // Before any module runs: their strings are looked up in this language.
   setUiLanguage(init.language, languagePack(init.language));
   // Chromium picks fallback fonts by `lang`, e.g. a Chinese UI font for zh-CN.
@@ -85,6 +89,7 @@ export async function startWorkbench(modules: readonly ShellModule[]): Promise<v
   services.register(IWorkspace, { folders: init.workspaceFolders, name: folder.split(/[\\/]/).pop() || folder });
   services.register(IEditors, new EditorRegistry());
   services.register(IPanels, new PanelRouter(connection, logger.child('panels')));
+  services.register(ISettings, settings);
 
   // Core RPC handlers: webview plumbing and the extension's message/picker UI.
   connection.onDidConnect((rpc) => {

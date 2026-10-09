@@ -175,11 +175,21 @@ export interface MenuItemContribution {
   readonly group?: string;
 }
 
+/** A setting with the JSON schema of its value, as a `contributes.configuration` property declares it. */
+export interface SettingContribution {
+  readonly key: string;
+  /** type, default, description / markdownDescription, enum, minimum... as declared. */
+  readonly schema: Readonly<Record<string, unknown>>;
+  /** The configuration's title, e.g. `Claude Code`. */
+  readonly section: string;
+}
+
 /** What the extension declares in its package.json that the shell shows itself. */
 export interface ExtensionContributions {
   readonly commands: readonly CommandContribution[];
   /** By menu id, e.g. `webview/context`. */
   readonly menus: Readonly<Record<string, readonly MenuItemContribution[]>>;
+  readonly configuration: readonly SettingContribution[];
 }
 
 /** One entry the renderer adds to a webview's right-click menu. */
@@ -421,6 +431,10 @@ export type MainApiForRenderer = {
   'os.openExternal': (p: { url: string }) => boolean;
   /** A system notification; also flashes the taskbar button. Only shown while unfocused. */
   'os.notify': (p: { title: string; body: string }) => void;
+  /** The user's settings (flat `section.key -> value`) and where settings.json is. */
+  'settings.read': (p: void) => { values: Record<string, unknown>; filePath: string };
+  /** Writes one setting to settings.json; `value: undefined` removes it (back to the default). */
+  'settings.update': (p: { key: string; value: unknown }) => void;
   'window.toggleDevTools': (p: void) => void;
   /** The chords main should intercept and send back as `keybinding` events. */
   'window.setKeybindings': (p: { chords: readonly string[] }) => void;
@@ -443,6 +457,8 @@ export type MainEventsForRenderer = {
   contextMenuAction: { readonly webviewId: string; readonly id: string };
   /** Settings now ask for another display language than this run shows; it applies on restart. */
   languageChanged: { readonly language: UiLanguage };
+  /** settings.json changed (from the shell or by hand): all values, and the keys that changed. */
+  settingsChanged: { readonly values: Readonly<Record<string, unknown>>; readonly keys: readonly string[] };
 };
 
 export interface MainEventMessage<K extends keyof MainEventsForRenderer = keyof MainEventsForRenderer> {

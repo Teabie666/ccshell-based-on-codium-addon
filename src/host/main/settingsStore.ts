@@ -8,6 +8,7 @@
  */
 
 import * as fs from 'node:fs';
+import * as path from 'node:path';
 import { applyEdits, modify, parse, type ParseError } from 'jsonc-parser';
 import { Emitter, type Event } from '../../platform/event';
 import { Disposable, toDisposable } from '../../platform/lifecycle';
@@ -27,11 +28,24 @@ export class SettingsStore extends Disposable {
   readonly onDidChange: Event<SettingsChange> = this.changeEmitter.event;
 
   constructor(
-    private readonly filePath: string,
+    readonly filePath: string,
     private readonly logger: ILogger,
   ) {
     super();
+    this.ensureFile();
     this.values = this.readFromDisk();
+  }
+
+  /** An empty settings.json from the start, so it can be opened in the editor and watched. */
+  private ensureFile(): void {
+    try {
+      if (!fs.existsSync(this.filePath)) {
+        fs.mkdirSync(path.dirname(this.filePath), { recursive: true });
+        fs.writeFileSync(this.filePath, '{\n}\n', 'utf8');
+      }
+    } catch (error) {
+      this.logger.warn(`cannot create ${this.filePath}`, error);
+    }
   }
 
   get all(): Readonly<Record<string, unknown>> {

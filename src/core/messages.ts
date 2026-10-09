@@ -14,7 +14,15 @@ export const t = defineMessages('core', {
   categoryDeveloper: 'Developer',
   categoryPreferences: 'Preferences',
   categoryFile: 'File',
+  sectionWorkbench: 'Workbench',
 });
+
+/** Sections of the settings editor that several modules add to. */
+export const SettingsSection = {
+  get workbench(): string {
+    return t('sectionWorkbench');
+  },
+};
 
 /** Command palette categories that several modules use, named as in VS Code. */
 export const CommandCategory = {

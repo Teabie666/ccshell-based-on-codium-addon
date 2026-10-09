@@ -6,6 +6,9 @@ export const t = defineMessages('themes', {
   colorTheme: 'Color Theme',
   selectColorTheme: 'Select Color Theme',
   current: 'current',
+  themeSetting: 'The color theme of ccshell, its editors and the Claude Code views.',
+  uiFontFamily: 'The font family of the user interface.',
+  uiFontSize: 'The font size of the user interface, in pixels.',
 });
 
 /**

@@ -5,11 +5,12 @@
 
 import * as fs from 'node:fs';
 import * as path from 'node:path';
+import { DEFAULT_FONTS, DEFAULT_THEME_ID } from '../../platform/defaults';
 import type { ILogger } from '../../platform/log';
 import type { ThemeData, ThemeSummary } from '../../platform/protocol';
 import { readJsonFile } from '../node/jsonFile';
 
-export const DEFAULT_THEME_ID = 'dark-modern';
+export { DEFAULT_THEME_ID } from '../../platform/defaults';
 
 export function listThemeSummaries(themesDir: string): ThemeSummary[] {
   let names: string[];
@@ -24,15 +25,7 @@ export function listThemeSummaries(themesDir: string): ThemeSummary[] {
   });
 }
 
-/** VS Code's defaults on Windows. Fonts are user settings, never part of a captured theme. */
-const DEFAULT_FONTS = {
-  family: '"Segoe WPC", "Segoe UI", sans-serif',
-  size: 13,
-  editorFamily: "Consolas, 'Courier New', monospace",
-  editorSize: 14,
-};
-
-/** Adds the `--vscode-*font*` variables from settings (VS Code setting names) or defaults. */
+/** Adds the `--vscode-*font*` variables from settings (VS Code setting names) or defaults. Fonts are user settings, never part of a captured theme. */
 export function withFontVariables(theme: ThemeData, settings: Readonly<Record<string, unknown>>): ThemeData {
   const text = (key: string, fallback: string): string => {
     const value = settings[key];
@@ -50,7 +43,7 @@ export function withFontVariables(theme: ThemeData, settings: Readonly<Record<st
       'vscode-font-weight': 'normal',
       'vscode-font-size': size('workbench.fontSize', DEFAULT_FONTS.size),
       'vscode-editor-font-family': text('editor.fontFamily', DEFAULT_FONTS.editorFamily),
-      'vscode-editor-font-weight': text('editor.fontWeight', 'normal'),
+      'vscode-editor-font-weight': text('editor.fontWeight', DEFAULT_FONTS.editorWeight),
       'vscode-editor-font-size': size('editor.fontSize', DEFAULT_FONTS.editorSize),
     },
   };

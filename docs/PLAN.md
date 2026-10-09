@@ -116,8 +116,8 @@ Electron main ── 窗口、CLI、单实例、配置/状态存储（唯一写�
 - **视觉规范**（`docs/design.md`）：直角（壳里 border-radius 一律 0）、1px 分隔线、codicon 图标、信息密度高、颜色全部来自主题变量。不要大圆角卡片、渐变、阴影、留白过多的"AI 风"。插件自己的界面保持原样不动。
 - 侧边栏用 Ctrl+B 开关。内容面板有东西时自动打开，Ctrl+\ 开关，宽度可拖，标签页可以弹出成独立窗口。
 - 每个打开的对话对应一个插件 panel（背后一个活着的 claude 进程）。中间只显示当前对话，切换靠侧边栏，Ctrl+Tab 在已打开的对话之间轮换，Ctrl+N 新建。
-- 保留的 VS Code 组件：Monaco 编辑器和 diff 编辑器、codicon、主题配色、Ctrl+P 快速打开、Ctrl+Shift+P 命令面板、Ctrl+F 查找。
-- 砍掉的：文件树、终端、调试、SCM、扩展市场、任务、设置图形界面（改成在 Monaco 里编辑带 schema 的 settings.json）、状态栏、活动栏、底部面板。
+- 保留的 VS Code 组件：Monaco 编辑器和 diff 编辑器、codicon、主题配色、Ctrl+P 快速打开、Ctrl+Shift+P 命令面板、Ctrl+F 查找、设置编辑器（图形界面 + 在 Monaco 里编辑带 schema 的 settings.json，两者都有，跟 VS Code 一样）。
+- 砍掉的：文件树、终端、调试、SCM、扩展市场、任务、状态栏、活动栏、底部面板。
 
 ## vscode 兼容层（compat/vscode）
 
@@ -185,7 +185,9 @@ Electron main ── 窗口、CLI、单实例、配置/状态存储（唯一写�
 ## 配置和 CLI
 
 - **数据目录**：`%APPDATA%\ccshell\`，下面有 `settings.json`（JSONC）、`providers.json`（密钥字段是加密后的值）、`state\`、`logs\`、`extensions\`、`themes\`。Program Files 下的程序目录只读。
-- **设置的 schema** = 插件的 `contributes.configuration` + 各 feature 通过贡献点注册的 `ccshell.*`。用 Monaco 编辑时带 schema 校验，保存后立即生效。首次启动可以从 VSCodium 导入 `claudeCode.*` 和编辑器字体设置。
+- **设置的 schema** = 插件的 `contributes.configuration` + 各 feature 通过贡献点注册的设置（`ccshell.*`，以及壳照 VS Code 支持的 `editor.*`、`workbench.*` 等）。
+- **设置编辑器**（M2.5）：照 VS Code 的设置界面，作为内容面板的标签页（Ctrl+,）：搜索、分类目录、按类型给开关 / 下拉 / 输入框，改过的项有标记、可以还原，复杂的值去 settings.json 改；一个按钮切到在 Monaco 里编辑 settings.json（补全、悬停说明、按 schema 校验）。两边改了都保存后立即生效。编辑器的字体、字号等设置对普通编辑器和 diff 都生效。
+- 首次启动可以从 VSCodium 导入 `claudeCode.*` 和编辑器字体设置。
 - **CLI**：
   ```
   ccshell [folder] [--provider <id>] [--new-window] [--session <id>] [--prompt <文本>] [--goto <file:line>]
@@ -250,9 +252,10 @@ electron-builder 打 NSIS 安装包：可以选只装当前用户，或装到 Pr
   - 窗口状态记忆、重启后恢复对话、日志。
 - **M1.5 界面语言**：英文 / 简体中文切换（设置 + 命令面板，重启生效），壳的全部现有文字和插件出现在壳里的菜单项都有中文。放在 M2 之前：后面几个阶段会加大量界面文字，先有机制，它们一开始就是两种语言，不用回头补。
 - **M2 内容面板 + Monaco**：打开文件、Ctrl+P、Markdown 预览、保存和外部修改处理、选区同步、diff 标签页、计划预览标签页、弹出成独立窗口。
+- **M2.5 设置编辑器**（M2 试用后加的）：设置的 schema 贡献点、设置图形界面、带 schema 的 settings.json 编辑、编辑器和 diff 的字体等设置。原来排在 M4 的"settings 加 schema 和热更新"挪到这里。
 - **M3 评论**：完整复刻上面描述的交互。
 - **M3.5 插件界面汉化（可选）**：界面语言是中文时，插件自己界面里的短文字按对照表显示中文；插件文件不改，对照表不带原文，对话内容不动。
-- **M4 配置 / CLI / API 接口 / 插件管理**：settings 加 schema 和热更新、CLI 参数和单实例、API 接口和加密存储、导入 DeepSeek、快捷方式、Open VSX 下载/更新/回滚（下载不了时手动导入）、首次启动流程（含可选安装 Git 的提示）。
+- **M4 配置 / CLI / API 接口 / 插件管理**：CLI 参数和单实例、API 接口和加密存储、导入 DeepSeek、快捷方式、Open VSX 下载/更新/回滚（下载不了时手动导入）、首次启动流程（含可选安装 Git 的提示）。
 - **M5 打包和发布**：NSIS 安装包，在全新环境下测试（临时 user-data-dir、不依赖 VSCodium、模拟没登录的情况）；发布到 GitHub Releases 后，交给几位使用者在各自的电脑上从零试用。
 - **M6 名字、图标、视觉打磨**（单独讨论）。
 

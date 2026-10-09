@@ -17,6 +17,7 @@ import { extensionHostStatusModule } from '../../features/extensionHostStatus';
 import { extensionMenusModule } from '../../features/extensionMenus';
 import { languageModule } from '../../features/language';
 import { sessionsModule } from '../../features/sessions';
+import { settingsModule } from '../../features/settings';
 import { themesModule } from '../../features/themes';
 import { windowModule } from '../../features/window';
 
@@ -27,6 +28,7 @@ const modules: ShellModule[] = [
   editorModule,
   markdownModule,
   quickOpenModule,
+  settingsModule,
   sessionsModule,
   themesModule,
   languageModule,

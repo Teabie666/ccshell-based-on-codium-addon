@@ -45,9 +45,13 @@ const builds = [
     // Monaco's modules import their own CSS; the prebuilt stylesheet is copied instead (copyStatic).
     loader: { '.css': 'empty' },
   },
-  // Monaco's editor worker (diff computation, word suggestions): self-contained, classic worker.
+  // Monaco's workers: the editor's (diff computation, word suggestions) and the JSON language
+  // service's (settings.json). Self-contained, classic workers.
   {
-    entryPoints: { 'editor.worker': 'monaco-editor/editor/editor.worker.js' },
+    entryPoints: {
+      'editor.worker': 'monaco-editor/editor/editor.worker.js',
+      'json.worker': 'monaco-editor/languages/features/json/json.worker.js',
+    },
     outdir: 'dist/renderer',
     platform: 'browser',
     format: 'iife',

@@ -479,6 +479,67 @@ await step('the title bar button toggles the empty content pane', async () => {
   await waitFor(() => page.locator('#content-pane').isHidden(), 5000, 'the pane to hide');
 });
 
+// ---- settings ------------------------------------------------------------------------------
+
+const readSettings = () => JSON.parse(readFileSync(settingsFile, 'utf8'));
+const settingRow = (key) => page.locator(`#content-pane .setting-item[data-key="${key}"]`);
+
+await step('Ctrl+, opens the settings editor; Editor: Font Size applies to the editor and resets', async () => {
+  await press('Control+,');
+  await page.locator('#content-pane .settings-editor').waitFor({ timeout: 10_000 });
+  await page.locator('#content-pane .settings-search').fill('font size');
+  await waitFor(() => settingRow('editor.fontSize').isVisible(), 5000, 'the Editor: Font Size row');
+  if (await settingRow('editor.minimap.enabled').isVisible()) throw new Error('search did not filter');
+  // The extension's settings are listed, except those for VS Code integration ccshell lacks.
+  await page.locator('#content-pane .settings-search').fill('');
+  await waitFor(async () => (await settingRow('claudeCode.useCtrlEnterToSend').count()) === 1, 10_000, "the extension's settings");
+  if ((await settingRow('claudeCode.useTerminal').count()) !== 0) throw new Error('claudeCode.useTerminal is listed');
+  await page.screenshot({ path: path.join(runDir, 'settings.png') });
+
+  await settingRow('editor.fontSize').locator('.setting-input').fill('20');
+  await waitFor(() => readSettings()['editor.fontSize'] === 20, 5000, 'editor.fontSize in settings.json');
+  await waitFor(() => settingRow('editor.fontSize').evaluate((row) => row.classList.contains('modified')), 5000, 'the modified mark');
+
+  await press('Control+P');
+  await page.locator('.quick-input-filter').fill('sample.ts');
+  await waitFor(async () => (await page.locator('.quick-input-item').count()) > 0, 10_000, 'sample.ts in the list');
+  await page.locator('.quick-input-filter').press('Enter');
+  const fontSize = await waitFor(async () => {
+    const lines = page.locator('#content-pane .content-editor:not([hidden]) .view-lines');
+    const size = (await lines.count()) ? await lines.evaluate((element) => getComputedStyle(element).fontSize) : '';
+    return size === '20px' ? size : undefined;
+  }, 10_000, 'the editor at 20px');
+
+  await page.locator('#content-pane .content-tab', { hasText: 'Settings' }).click();
+  await settingRow('editor.fontSize').hover();
+  await settingRow('editor.fontSize').locator('.setting-reset').click();
+  await waitFor(() => readSettings()['editor.fontSize'] === undefined, 5000, 'editor.fontSize removed');
+  return `editor ${fontSize}`;
+});
+
+await step('settings.json opens in the editor, validated against the settings schema', async () => {
+  const original = readFileSync(settingsFile, 'utf8');
+  const withError = { ...JSON.parse(original), 'editor.tabSize': 'wide' };
+  writeFileSync(settingsFile, JSON.stringify(withError, null, 2), 'utf8');
+  await page.locator('#content-pane .content-tab', { hasText: 'Settings' }).click();
+  await page.locator('#content-pane .settings-open-json').click();
+  await waitFor(async () => (await page.locator('#content-pane .content-tab.active .tab-label').innerText()) === 'settings.json', 10_000, 'the settings.json tab');
+  // The JSON language service runs in its worker; its warning shows as a squiggle.
+  await waitFor(
+    async () => (await page.locator('#content-pane .content-editor:not([hidden]) :is(.squiggly-warning, .squiggly-error)').count()) > 0,
+    15_000,
+    'the schema warning on "wide"',
+  );
+  await page.screenshot({ path: path.join(runDir, 'settings-json.png') });
+  writeFileSync(settingsFile, original, 'utf8');
+  await waitFor(async () => !(await editorText()).includes('"wide"'), 10_000, 'the file back as it was');
+  // Close settings.json, sample.ts and the settings editor.
+  for (let i = 0; i < 3 && (await contentTabs().count()) > 0; i++) {
+    await page.locator('#content-pane .content-tab.active .tab-close').click();
+    await page.waitForTimeout(200);
+  }
+});
+
 await page.screenshot({ path: path.join(runDir, 'final.png') });
 
 await step('open conversations are restored after a restart', async () => {

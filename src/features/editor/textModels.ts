@@ -14,7 +14,7 @@ import type { ExtensionHostConnection } from '../../core/extensionHost';
 import type { Highlighting } from './highlighting';
 import type { MonacoApi } from './monaco';
 
-type TextModel = ReturnType<MonacoApi['editor']['createModel']>;
+export type TextModel = ReturnType<MonacoApi['editor']['createModel']>;
 type IRange = { startLineNumber: number; startColumn: number; endLineNumber: number; endColumn: number };
 
 export function toMonacoRange(range: RangeDto): IRange {
@@ -85,6 +85,14 @@ export interface ModelReference extends IDisposable {
   readonly entry: ModelEntry;
 }
 
+/**
+ * The Monaco language of a document: JSON with comments is `json` there, which Monaco's
+ * JSON language service (completion, hovers, validation) serves, with comments allowed.
+ */
+export function monacoLanguageFor(languageId: string): string {
+  return languageId === 'jsonc' ? 'json' : languageId;
+}
+
 export class TextModels {
   private readonly entries = new Map<string, Entry>();
 
@@ -93,14 +101,24 @@ export class TextModels {
     private readonly highlighting: Highlighting,
     private readonly connection: ExtensionHostConnection,
     private readonly logger: ILogger,
+    /** Applied to each new model (indentation settings). */
+    private readonly configureModel: (model: TextModel) => void = () => {},
   ) {}
+
+  forEachModel(callback: (model: TextModel) => void): void {
+    for (const entry of this.entries.values()) {
+      callback(entry.model);
+    }
+  }
 
   /** The model for `snapshot.uri`, created from the snapshot the first time; release with dispose(). */
   acquire(snapshot: DocumentSnapshot): ModelReference {
     let entry = this.entries.get(snapshot.uri);
     if (!entry) {
-      void this.highlighting.ensureLanguage(snapshot.languageId);
-      const model = this.monaco.editor.createModel(snapshot.text, snapshot.languageId, this.monaco.Uri.parse(snapshot.uri));
+      const language = monacoLanguageFor(snapshot.languageId);
+      void this.highlighting.ensureLanguage(language);
+      const model = this.monaco.editor.createModel(snapshot.text, language, this.monaco.Uri.parse(snapshot.uri));
+      this.configureModel(model);
       const created = new Entry(snapshot.uri, model, snapshot.readOnly, snapshot.isDirty);
       created.subscription = model.onDidChangeContent((event) => {
         this.connection.rpc?.notify('document.didChange', {

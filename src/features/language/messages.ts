@@ -9,4 +9,5 @@ export const t = defineMessages('language', {
   currentSetting: '{0} (current)',
   restartToApply: 'The display language changes to "{0}" after ccshell restarts.',
   restart: 'Restart',
+  languageSetting: 'The display language of ccshell. Takes effect after a restart.',
 });

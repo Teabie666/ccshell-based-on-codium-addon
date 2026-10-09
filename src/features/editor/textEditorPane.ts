@@ -64,6 +64,8 @@ export class TextEditorPane implements EditorPane {
     private readonly connection: ExtensionHostConnection,
     private readonly dialogs: Dialogs,
     private readonly label: string,
+    /** Monaco options from the settings and the theme's fonts; asked again when the pane moves. */
+    private readonly options: () => Record<string, unknown>,
   ) {
     this.model = models.acquire(data.document);
     const entry = this.model.entry;
@@ -108,11 +110,10 @@ export class TextEditorPane implements EditorPane {
   private createEditor(): CodeEditor {
     const entry = this.model.entry;
     const editor = this.monaco.editor.create(this.body, {
+      ...this.options(),
       model: entry.model,
       readOnly: entry.readOnly,
       automaticLayout: true,
-      ...editorFontOptions(),
-      scrollBeyondLastLine: false,
       fixedOverflowWidgets: true,
     });
     this.editorDisposables.add(

@@ -4,7 +4,12 @@
  * and malformed ones are skipped instead of failing the whole read.
  */
 
-import type { CommandContribution, ExtensionContributions, MenuItemContribution } from '../../platform/protocol';
+import type {
+  CommandContribution,
+  ExtensionContributions,
+  MenuItemContribution,
+  SettingContribution,
+} from '../../platform/protocol';
 
 function asRecord(value: unknown): Readonly<Record<string, unknown>> | undefined {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
@@ -43,5 +48,17 @@ export function readContributions(packageJson: Readonly<Record<string, unknown>>
     });
   }
 
-  return { commands, menus };
+  // `configuration` is one `{ title, properties }` or a list of them.
+  const displayName = optionalString(packageJson.displayName) ?? optionalString(packageJson.name) ?? '';
+  const configurations = Array.isArray(contributes?.configuration) ? contributes.configuration : [contributes?.configuration];
+  const configuration = configurations.flatMap((entry): SettingContribution[] => {
+    const group = asRecord(entry);
+    const section = optionalString(group?.title) ?? displayName;
+    return Object.entries(asRecord(group?.properties) ?? {}).flatMap(([key, value]): SettingContribution[] => {
+      const schema = asRecord(value);
+      return schema ? [{ key, schema, section }] : [];
+    });
+  });
+
+  return { commands, menus, configuration };
 }

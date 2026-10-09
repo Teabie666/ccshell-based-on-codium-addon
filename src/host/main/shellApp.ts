@@ -131,6 +131,7 @@ export class ShellApp extends Disposable {
     this.register(
       this.settings.onDidChange(({ keys }) => {
         this.extHost?.rpc.notify('settings.didChange', { settings: this.settings.all, keys });
+        this.window?.emit('settingsChanged', { values: this.settings.all, keys });
         if (keys.some((key) => THEME_SETTING_KEYS.has(key))) {
           this.reloadTheme();
         }
@@ -295,6 +296,8 @@ export class ShellApp extends Disposable {
       },
       'os.openExternal': ({ url }) => this.openExternal(url),
       'os.notify': ({ title, body }) => this.window?.notify(title, body),
+      'settings.read': () => ({ values: { ...this.settings.all }, filePath: this.settings.filePath }),
+      'settings.update': ({ key, value }) => this.settings.set(key, value),
       'window.toggleDevTools': () => this.window?.window.webContents.toggleDevTools(),
       'window.setKeybindings': ({ chords }) => this.window?.setInterceptedChords(chords),
       'window.zoom': ({ delta }) => this.window?.zoom(delta) ?? 0,

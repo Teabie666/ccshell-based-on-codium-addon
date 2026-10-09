@@ -11,7 +11,7 @@ import type { EditorHost, EditorPane } from '../../core/editors';
 import type { ExtensionHostConnection } from '../../core/extensionHost';
 import { t } from './messages';
 import type { MonacoApi } from './monaco';
-import { editorFontOptions, selectionToDto } from './textEditorPane';
+import { selectionToDto } from './textEditorPane';
 import type { ModelReference, TextModels } from './textModels';
 
 type DiffEditor = ReturnType<MonacoApi['editor']['createDiffEditor']>;
@@ -44,6 +44,7 @@ export class DiffEditorPane implements EditorPane {
     private readonly connection: ExtensionHostConnection,
     private readonly dialogs: Dialogs,
     private readonly label: string,
+    private readonly options: () => Record<string, unknown>,
   ) {
     this.original = models.acquire(data.original);
     this.modified = models.acquire(data.modified);
@@ -83,14 +84,11 @@ export class DiffEditorPane implements EditorPane {
 
   private createEditor(): DiffEditor {
     const editor = this.monaco.editor.createDiffEditor(this.body, {
+      // Side by side or inline, whitespace, wrapping: from the settings.
+      ...this.options(),
       automaticLayout: true,
-      ...editorFontOptions(),
       originalEditable: false,
       readOnly: this.modified.entry.readOnly,
-      renderSideBySide: true,
-      // A narrow content pane switches to the inline view, like VS Code does.
-      useInlineViewWhenSpaceIsLimited: true,
-      scrollBeyondLastLine: false,
       fixedOverflowWidgets: true,
     });
     editor.setModel({ original: this.original.entry.model, modified: this.modified.entry.model });

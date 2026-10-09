@@ -12,6 +12,7 @@ import type { ExtensionContributions } from '../../../src/platform/protocol';
 
 /** The webview/context menu of anthropic.claude-code 2.1.282, plus one undeclared command. */
 const contributions: ExtensionContributions = {
+  configuration: [],
   commands: [
     { command: 'claude-vscode.markSessionUnread', title: 'Claude Code: Mark Session as Unread' },
     { command: 'claude-vscode.renameSessionTab', title: 'Claude Code: Rename Session Tab' },

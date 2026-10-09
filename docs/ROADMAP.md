@@ -1,12 +1,13 @@
 # ROADMAP
 
-完整计划在 [PLAN.md](PLAN.md)。这里只把各阶段（M0–M6，外加插进去的 M1.5 和可选的 M3.5）拆成勾选清单、记进度；两边对不上时以 PLAN.md 为准。
+完整计划在 [PLAN.md](PLAN.md)。这里只把各阶段（M0–M6，外加插进去的 M1.5、M2.5 和可选的 M3.5）拆成勾选清单、记进度；两边对不上时以 PLAN.md 为准。
 
 `[x]` 已完成，`[ ]` 未完成。最后一次对照代码核对：2026-10-09。
 
 ## 下一步
 
-1. M3 评论（暂缓，等确定开始时间）
+1. M2.5 设置编辑器（进行中）
+2. M3 评论（暂缓，等确定开始时间）
 
 每个阶段结束都要做：typecheck、`npm test`、`node tests/ui.mjs`（动了 bridge / compat 再跑 `npm run smoke`）；看最新一次的 `shim-unimplemented.log`；确认没往 `C:\Program Files\VSCodium` 写任何东西、git 里没有密钥；用屏幕工具截图，跟 VSCodium 里的同一界面对比；用 `run-dev.cmd` 试用。
 
@@ -87,6 +88,17 @@
 - [x] 收尾时补的：语言配置（Ctrl+/ 注释、括号、缩进，取自 Monaco 自带的语言定义）；插件进程崩溃重启后，打开的文件连同未保存的修改自动回来；Markdown 预览显示工作区里的图片（`ccw://img`，只放行工作区内的图片文件）和 https 图片；只打包 Dark+ / Light+ 两套 Shiki 主题
 - [x] 试用（2026-10-09，包括弹出窗口、语言配置、Markdown 图片、拖文件进窗口）
 
+## M2.5 设置编辑器：进行中（2026-10-09 开始）
+
+M2 试用后加的。原来 PLAN 砍掉了设置图形界面，改为图形界面和 settings.json 编辑两者都有，跟 VS Code 一样；M4 里设置的 schema 和热更新挪到这里。
+
+- [ ] 设置的 schema 贡献点（core）：各模块注册自己的设置（键、JSON schema、所在分类）；插件的 `contributes.configuration` 也登记进来
+- [ ] 渲染进程能读写设置：主进程是唯一写入方，改了推送给渲染进程
+- [ ] 设置图形界面：内容面板的标签页（Ctrl+, / 标题栏齿轮）；搜索、分类目录；开关 / 下拉 / 文本和数字输入；改过的项有标记、能还原；复杂的值链接到 settings.json
+- [ ] 在 Monaco 里编辑 settings.json：Monaco 的 JSON 语言服务（单独的 worker），按已知设置生成 schema：补全、悬停说明、校验；保存后立即生效
+- [ ] 编辑器设置：字体、字号、字重、行高、连字、Tab 宽度、自动换行、缩略图、行号、空白字符；diff 并排 / 忽略首尾空白；对普通编辑器和 diff 都实时生效
+- [ ] 测试、中文译文、文档
+
 ## M3 评论：未开始
 
 复刻插件"计划评论"的体验，做成 `features/comments`。
@@ -111,8 +123,7 @@
 
 设置
 
-- [ ] core 的 settings schema 贡献点：schema = 插件的 `contributes.configuration` + 各 feature 注册的 `ccshell.*`
-- [ ] 在 Monaco 里编辑 settings.json，带 schema 校验，保存后立即生效（现在主题和字体已经能实时生效）
+- 设置的 schema 贡献点、设置界面、在 Monaco 里编辑 settings.json：挪到了 M2.5
 - [ ] 首次启动可以从 VSCodium 导入 `claudeCode.*` 和编辑器字体设置
 
 CLI 和窗口

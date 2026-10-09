@@ -4,9 +4,10 @@
  * startup (platform/nls.ts); changing it takes a restart, as in VS Code.
  */
 
+import { SettingsSection } from '../../core/messages';
 import type { ShellModule } from '../../core/module';
-import { ICommands, IDialogs, INative } from '../../core/serviceIds';
-import { LANGUAGE_NAMES, type UiLanguageSetting } from '../../platform/nls';
+import { ICommands, IDialogs, INative, ISettings } from '../../core/serviceIds';
+import { LANGUAGE_NAMES, LANGUAGE_SETTING, type UiLanguageSetting } from '../../platform/nls';
 import { t } from './messages';
 
 export const languageModule: ShellModule = {
@@ -41,6 +42,23 @@ export const languageModule: ShellModule = {
         },
         { title: t('configureDisplayLanguage') },
       ),
+    );
+
+    subscriptions.add(
+      services.get(ISettings).register([
+        {
+          key: LANGUAGE_SETTING,
+          section: SettingsSection.workbench,
+          order: 3,
+          schema: {
+            type: 'string',
+            default: 'auto',
+            enum: ['auto', 'zh-cn', 'en'],
+            enumItemLabels: [t('followSystem'), LANGUAGE_NAMES['zh-cn'], LANGUAGE_NAMES.en],
+            description: t('languageSetting'),
+          },
+        },
+      ]),
     );
 
     // Comes from main whether the language was picked above or edited in settings.json.
