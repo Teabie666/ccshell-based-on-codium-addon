@@ -10,6 +10,7 @@ import type { MessagePortMain } from 'electron';
 import { createVSCodeApi, type CompatServices } from '../../compat/vscode';
 import { createExtensionContext } from '../../compat/vscode/extensionContext';
 import { Memento } from '../../compat/vscode/memento';
+import { Uri } from '../../compat/vscode/uri';
 import { RpcEndpoint, type MessageTransport } from '../../platform/ipc';
 import { toDisposable } from '../../platform/lifecycle';
 import type { ILogger } from '../../platform/log';
@@ -94,7 +95,9 @@ export class ExtensionHost {
     });
     this.compat = compat;
     const { api, services } = createVSCodeApi(compat.host, {
-      onShowOutput: (channel) => this.logger.info(`output channel "${channel.name}" is at ${channel.filePath}`),
+      // `outputChannel.show()` (the Show Logs command, the webview's open_output_panel):
+      // the channel's log file opens in the content pane and follows new lines.
+      onShowOutput: (channel) => void this.showLogFile(channel.filePath),
     });
     this.services = services;
     registerWorkbenchCommands(services.commands);
@@ -163,6 +166,22 @@ export class ExtensionHost {
       const err = error instanceof Error ? error : new Error(String(error));
       this.main.notify('exthost.activationFailed', { message: err.message, stack: err.stack });
       return false;
+    }
+  }
+
+  private async showLogFile(filePath: string): Promise<void> {
+    const services = this.services;
+    if (!services) {
+      return;
+    }
+    try {
+      // The channel creates its file on the first line it writes.
+      await fs.promises.mkdir(path.dirname(filePath), { recursive: true });
+      await fs.promises.appendFile(filePath, '');
+      const document = await services.documents.open(Uri.file(filePath));
+      await services.editors.showTextDocument(document, { preview: false });
+    } catch (error) {
+      this.logger.error(`cannot show the log ${filePath}`, error);
     }
   }
 

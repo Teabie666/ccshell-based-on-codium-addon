@@ -356,6 +356,20 @@ await step('Ctrl+W in the editor closes its tab and the pane hides; the conversa
   if ((await tabCount()) !== conversations) throw new Error('a conversation closed too');
 });
 
+await step('Claude: Show Logs opens the extension log in the content pane', async () => {
+  await press('Control+Shift+P');
+  await page.locator('.quick-input-filter').fill('Claude: Show Logs');
+  await waitFor(async () => (await page.locator('.quick-input-item').count()) === 1, 5000, 'the command');
+  await page.locator('.quick-input-filter').press('Enter');
+  await waitFor(async () => (await contentTabs().count()) === 1, 10_000, 'the log tab');
+  const label = await page.locator('#content-pane .content-tab.active .tab-label').innerText();
+  if (!label.endsWith('.log')) throw new Error(`tab is ${label}`);
+  await page.locator('#content-pane .monaco-editor .view-lines').click();
+  await press('Control+W');
+  await waitFor(async () => (await contentTabs().count()) === 0, 5000, 'the log tab to close');
+  return label;
+});
+
 await step('the title bar button toggles the empty content pane', async () => {
   await page.locator('.icon-content-pane').click();
   await waitFor(() => page.locator('#content-pane').isVisible(), 5000, 'the pane to show');
