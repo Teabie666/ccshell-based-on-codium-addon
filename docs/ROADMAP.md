@@ -6,7 +6,7 @@
 
 ## 下一步
 
-1. 试用 M2 最后加的部分，根据反馈调整后开始 M3 评论
+1. M3 评论（暂缓，等确定开始时间）
 
 每个阶段结束都要做：typecheck、`npm test`、`node tests/ui.mjs`（动了 bridge / compat 再跑 `npm run smoke`）；看最新一次的 `shim-unimplemented.log`；确认没往 `C:\Program Files\VSCodium` 写任何东西、git 里没有密钥；用屏幕工具截图，跟 VSCodium 里的同一界面对比；用 `run-dev.cmd` 试用。
 
@@ -85,7 +85,7 @@
 - [x] smoke 加了 diff 标签页的接受 / 拒绝两项
 - [x] smoke 再加：点聊天里的文件提及，Monaco 标签页打开该文件；计划模式下计划预览进内容面板
 - [x] 收尾时补的：语言配置（Ctrl+/ 注释、括号、缩进，取自 Monaco 自带的语言定义）；插件进程崩溃重启后，打开的文件连同未保存的修改自动回来；Markdown 预览显示工作区里的图片（`ccw://img`，只放行工作区内的图片文件）和 https 图片；只打包 Dark+ / Light+ 两套 Shiki 主题
-- [ ] 试用（最后加的弹出窗口、语言配置、崩溃恢复、Markdown 图片还没试过；拖文件进窗口没有自动测试）
+- [x] 试用（2026-10-09，包括弹出窗口、语言配置、Markdown 图片、拖文件进窗口）
 
 ## M3 评论：未开始
 
