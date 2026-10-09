@@ -3,10 +3,12 @@
  * with the compatibility layer's document registry and editor service.
  */
 
+import { readFile } from 'node:fs/promises';
 import type { CompatServices } from '../../compat/vscode';
 import { Range } from '../../compat/vscode/types';
 import { Uri } from '../../compat/vscode/uri';
 import type { ILogger } from '../../platform/log';
+import { SAVED_FILE_SCHEME } from '../../platform/protocol';
 import type { RendererRpc } from './compatHost';
 
 /** VS Code's default `files.exclude` and `search.exclude`, which quick open honours. */
@@ -19,6 +21,10 @@ export function registerEditorRequests(
   logger: ILogger,
 ): void {
   const { documents, editors, fileSystem } = services;
+
+  fileSystem.registerContentProvider(SAVED_FILE_SCHEME, {
+    provideTextDocumentContent: (uri) => readFile(uri.with({ scheme: 'file' }).fsPath, 'utf8'),
+  });
 
   renderer.handle('documents.show', async ({ uri, preserveFocus, preview, selection }) => {
     try {

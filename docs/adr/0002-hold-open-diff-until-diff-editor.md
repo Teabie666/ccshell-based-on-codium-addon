@@ -1,6 +1,6 @@
 # 0002 diff 编辑器到位之前，挂起插件的 open_diff 请求
 
-- 状态：已采纳（2026-10-08），M2 做完 diff 标签页后改为真实实现
+- 状态：已被取代（2026-10-09，M2）。内容面板实现了 `vscode.diff`（Monaco 的 diff 编辑器 + `TabInputTextDiff` 标签页，Claude 的提议改动带"接受 / 拒绝"按钮），bridge 不再挂起 `open_diff`、也不再代答 `accept_diff`，两者都交给插件原样处理。挂起的逻辑还留在 `bridge.ts` 里，只在 `diffEditorAvailable` 为 false 时生效，作为 diff 编辑器出问题时的退路。
 
 ## 背景
 

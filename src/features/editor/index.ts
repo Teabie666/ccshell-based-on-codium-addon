@@ -24,9 +24,11 @@ import type { ThemeService } from '../../core/themes';
 import type { Dialogs } from '../../core/dialogs';
 import type { ILogger } from '../../platform/log';
 import { getUiLanguage } from '../../platform/nls';
-import type { ShowTextEditorParams } from '../../platform/protocol';
+import { SAVED_FILE_SCHEME, type ShowDiffEditorParams, type ShowTextEditorParams } from '../../platform/protocol';
+import { URI } from 'vscode-uri';
 import { IContentPane } from '../contentPane';
 import type { ContentPane } from '../contentPane/contentPane';
+import { DiffEditorPane, type DiffInputData } from './diffEditorPane';
 import { Highlighting } from './highlighting';
 import { t } from './messages';
 import { loadMonaco, type MonacoApi } from './monaco';
@@ -34,6 +36,12 @@ import { TextEditorPane, editorFontOptions, type TextInputData } from './textEdi
 import { TextModels } from './textModels';
 
 const TEXT_INPUT = 'text';
+const DIFF_INPUT = 'diff';
+
+/** Content pane input id of an extension host tab (text or diff). */
+function tabInputId(tabId: string): string {
+  return `tab:${tabId}`;
+}
 
 function basename(path: string): string {
   return path.split(/[\\/]/).pop() || path;
@@ -45,6 +53,7 @@ export class TextEditorService {
   private models: TextModels | undefined;
   /** Text editor panes by the editor id the extension host assigned. */
   private readonly panes = new Map<string, TextEditorPane>();
+  private readonly diffPanes = new Set<DiffEditorPane>();
 
   constructor(
     private readonly connection: ExtensionHostConnection,
@@ -83,12 +92,70 @@ export class TextEditorService {
     return pane instanceof TextEditorPane ? pane : undefined;
   }
 
+  get activeDiff(): DiffEditorPane | undefined {
+    const pane = this.contentPane.active?.pane;
+    return pane instanceof DiffEditorPane ? pane : undefined;
+  }
+
+  /** The document Ctrl+S saves: the active text editor's, or the right side of the active diff. */
+  get activeDocument(): string | undefined {
+    return this.activePane?.uri ?? this.activeDiff?.modifiedUri;
+  }
+
+  /** The extension host's `editor.showDiff` (the `vscode.diff` command). */
+  async showDiff(params: ShowDiffEditorParams): Promise<void> {
+    await this.ready();
+    const data: DiffInputData = {
+      tabId: params.tabId,
+      original: params.original,
+      modified: params.modified,
+      originalEditorId: params.originalEditorId,
+      modifiedEditorId: params.modifiedEditorId,
+      actions: params.actions,
+    };
+    this.contentPane.open(
+      {
+        id: tabInputId(params.tabId),
+        typeId: DIFF_INPUT,
+        label: params.title,
+        tooltip: `${params.original.path} ↔ ${params.modified.path}`,
+        resource: params.modified.uri,
+        languageId: params.modified.languageId,
+        data,
+      },
+      { preserveFocus: params.preserveFocus },
+    );
+  }
+
+  createDiffPane(container: HTMLElement, input: EditorInput, host: EditorHost): DiffEditorPane {
+    if (!this.monaco || !this.models) {
+      throw new Error('diff editors are not loaded yet; they open through the extension host');
+    }
+    const pane = new DiffEditorPane(
+      this.monaco,
+      container,
+      input.data as DiffInputData,
+      host,
+      this.models,
+      this.connection,
+      this.dialogs,
+      input.label,
+    );
+    this.diffPanes.add(pane);
+    const dispose = pane.dispose.bind(pane);
+    pane.dispose = () => {
+      this.diffPanes.delete(pane);
+      dispose();
+    };
+    return pane;
+  }
+
   /** The extension host's `editor.showText`: opens or activates the document's tab. */
   async showText(params: ShowTextEditorParams): Promise<void> {
     await this.ready();
     const data: TextInputData = { tabId: params.tabId, editorId: params.editorId, document: params.document };
     const input: EditorInput = {
-      id: `${TEXT_INPUT}:${params.tabId}`,
+      id: tabInputId(params.tabId),
       typeId: TEXT_INPUT,
       label: basename(params.document.path),
       tooltip: params.document.path,
@@ -128,12 +195,20 @@ export class TextEditorService {
     for (const pane of this.panes.values()) {
       pane.editor.updateOptions(fonts);
     }
+    for (const pane of this.diffPanes) {
+      pane.editor.updateOptions(fonts);
+    }
+  }
+
+  /** The extension closed one of its tabs. */
+  closeTab(tabId: string): void {
+    this.contentPane.remove(tabInputId(tabId));
   }
 
   /** The extension host is gone: its documents cannot be saved any more. */
   closeAll(): void {
     for (const tab of this.contentPane.tabs) {
-      if (tab.input.typeId === TEXT_INPUT) {
+      if (tab.input.typeId === TEXT_INPUT || tab.input.typeId === DIFF_INPUT) {
         this.contentPane.remove(tab.input.id);
       }
     }
@@ -186,13 +261,21 @@ export const editorModule: ShellModule = {
         create: (container, input, host) => editors.createPane(container, input, host),
       }),
     );
+    subscriptions.add(
+      services.get(IEditors).register({
+        id: 'monaco.diff',
+        accepts: (input) => input.typeId === DIFF_INPUT,
+        create: (container, input, host) => editors.createDiffPane(container, input, host),
+      }),
+    );
 
     subscriptions.add(
       connection.onDidConnect((rpc) => {
         rpc.handle('editor.showText', (params) => editors.showText(params));
+        rpc.handle('editor.showDiff', (params) => editors.showDiff(params));
         rpc.handle('editor.setSelections', ({ editorId, selections }) => editors.pane(editorId)?.setSelections(selections));
         rpc.handle('editor.revealRange', ({ editorId, range, revealType }) => editors.pane(editorId)?.revealRange(range, revealType));
-        rpc.handle('tab.close', ({ tabId }) => contentPane.remove(`${TEXT_INPUT}:${tabId}`));
+        rpc.handle('tab.close', ({ tabId }) => editors.closeTab(tabId));
         rpc.handle('document.applyEdits', ({ uri, edits }) => editors.modelService?.applyEdits(uri, edits) ?? false);
         rpc.handle('document.reload', ({ uri, text }) => editors.modelService?.reload(uri, text));
         rpc.handle('document.didSave', ({ uri }) => editors.modelService?.didSave(uri));
@@ -207,7 +290,8 @@ export const editorModule: ShellModule = {
     subscriptions.add(layout.onDidChangeContentPaneVisibility(report));
 
     const updateContext = (): void => {
-      contextKeys.set('activeEditorIsText', editors.activePane !== undefined);
+      contextKeys.set('activeEditorIsText', editors.activeDocument !== undefined);
+      contextKeys.set('activeEditorIsDiff', editors.activeDiff !== undefined);
       contextKeys.set('editorTextFocus', document.activeElement?.closest('.monaco-editor') != null);
     };
     subscriptions.add(contentPane.onDidChangeActive(updateContext));
@@ -227,11 +311,11 @@ export const editorModule: ShellModule = {
       commands.register(
         'editor.save',
         async () => {
-          const pane = editors.activePane;
-          if (pane && !(await editors.modelService?.save(pane.uri))) {
+          const uri = editors.activeDocument;
+          if (uri && !(await editors.modelService?.save(uri))) {
             await services.get(IDialogs).showMessage({
               severity: 'error',
-              message: t('saveFailed', basename(pane.uri)),
+              message: t('saveFailed', basename(decodeURIComponent(uri))),
               modal: false,
               items: [],
             });
@@ -242,10 +326,35 @@ export const editorModule: ShellModule = {
       commands.register('editor.revert', () => editors.activePane && editors.modelService?.revert(editors.activePane.uri), {
         title: t('revertCommand'),
         category: CommandCategory.file,
-        when: 'activeEditorIsText',
+        when: 'activeEditorIsText && !activeEditorIsDiff',
       }),
-      commands.register('editor.find', () => editors.activePane?.editor.getAction('actions.find')?.run(), {
-        when: 'activeEditorIsText',
+      commands.register(
+        'editor.find',
+        () => (editors.activePane?.editor ?? editors.activeDiff?.editor.getModifiedEditor())?.getAction('actions.find')?.run(),
+        { when: 'activeEditorIsText' },
+      ),
+      commands.register(
+        'editor.compareWithSaved',
+        async () => {
+          const uri = editors.activePane?.uri;
+          if (!uri?.startsWith('file:')) {
+            return;
+          }
+          const name = basename(URI.parse(uri).fsPath);
+          const saved = URI.parse(uri).with({ scheme: SAVED_FILE_SCHEME }).toString();
+          await connection.executeCommand('vscode.diff', saved, uri, t('compareWithSavedTitle', name));
+        },
+        { title: t('compareWithSaved'), category: CommandCategory.file, when: 'activeEditorIsText && !activeEditorIsDiff' },
+      ),
+      commands.register('editor.acceptDiff', () => editors.activeDiff?.runAction('accept'), {
+        title: t('acceptCommand'),
+        category: 'Claude',
+        when: 'activeEditorIsDiff',
+      }),
+      commands.register('editor.rejectDiff', () => editors.activeDiff?.runAction('reject'), {
+        title: t('rejectCommand'),
+        category: 'Claude',
+        when: 'activeEditorIsDiff',
       }),
       // Main intercepts registered chords before Monaco sees them; hand Ctrl+F back to Monaco.
       keybindings.register({ key: 'ctrl+f', command: 'editor.find', when: 'editorTextFocus' }),

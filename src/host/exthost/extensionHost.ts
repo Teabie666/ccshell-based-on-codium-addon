@@ -100,8 +100,9 @@ export class ExtensionHost {
     registerWorkbenchCommands(services.commands);
     registerEditorRequests(renderer, services, init.workspaceFolders, this.logger.child('editors'));
     this.panelRestore = new PanelRestore(services.webviews, compat.host.storage, this.logger.child('restore'));
+    // The content pane shows `vscode.diff` (ADR 0002 held open_diff before it existed).
     services.webviews.interceptor = new ClaudeWebviewBridge(compat.host.os, this.logger.child('bridge'), {
-      diffEditorAvailable: () => false,
+      diffEditorAvailable: () => true,
     });
     installVSCodeModule(api);
 

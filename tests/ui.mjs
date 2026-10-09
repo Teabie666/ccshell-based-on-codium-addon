@@ -299,6 +299,32 @@ await step('a change on disk reloads the clean editor', async () => {
   await waitFor(async () => (await editorText()).includes('from outside'), 10_000, 'the editor to reload');
 });
 
+await step('Compare Active File with Saved opens a diff tab (vscode.diff)', async () => {
+  await page.locator('#content-pane .monaco-editor .view-lines').click();
+  await page.keyboard.press('Control+Home');
+  await page.keyboard.type('// unsaved\n');
+  await press('Control+Shift+P');
+  await page.locator('.quick-input-filter').fill('Compare Active File with Saved');
+  await waitFor(async () => (await page.locator('.quick-input-item').count()) === 1, 5000, 'the command');
+  await page.locator('.quick-input-filter').press('Enter');
+  await waitFor(async () => (await contentTabs().count()) === 2, 10_000, 'a diff tab');
+  await page.locator('#content-pane .monaco-diff-editor').waitFor({ timeout: 10_000 });
+  // The diff is computed in Monaco's worker: inserted lines get marked once it answers.
+  await waitFor(
+    async () => (await page.locator('#content-pane .monaco-diff-editor :is(.line-insert, .char-insert)').count()) > 0,
+    10_000,
+    'the inserted line to be marked',
+  );
+  const label = await page.locator('#content-pane .content-tab.active .tab-label').innerText();
+  await press('Control+W');
+  await waitFor(async () => (await contentTabs().count()) === 1, 5000, 'the diff tab to close');
+  // Back on the file: save, so later steps start clean.
+  await page.locator('#content-pane .monaco-editor .view-lines').click();
+  await press('Control+S');
+  await waitFor(async () => (await page.locator('#content-pane .content-tab.dirty').count()) === 0, 5000, 'the file to be saved');
+  return label;
+});
+
 await step('Ctrl+W in the editor closes its tab and the pane hides; the conversation stays', async () => {
   const conversations = await tabCount();
   await page.locator('#content-pane .monaco-editor .view-lines').click();

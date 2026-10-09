@@ -9,7 +9,7 @@ import type * as vscode from 'vscode';
 import { Emitter, type Event } from '../../platform/event';
 import { generateId } from '../../platform/ids';
 import type { ILogger } from '../../platform/log';
-import type { RangeDto, RevealType, SelectionDto } from '../../platform/protocol';
+import type { DiffActionDto, RangeDto, RevealType, SelectionDto } from '../../platform/protocol';
 import type { EditorsBackend } from './host';
 import type { TabGroupsModel, TabImpl } from './tabs';
 import type { TextDocumentImpl, TextDocuments } from './textDocuments';
@@ -25,6 +25,17 @@ import {
   ViewColumn,
 } from './types';
 import type { Uri } from './uri';
+
+/**
+ * anthropic.claude-code 2.1.282 keeps a proposed edit in a document of this scheme and
+ * offers these commands in the diff editor's title bar (`editor/title`, enabled while
+ * such a document is visible). They act on the active tab.
+ */
+const PROPOSED_EDIT_SCHEME = '_claude_vscode_fs_right';
+const PROPOSED_EDIT_ACTIONS: readonly DiffActionDto[] = [
+  { command: 'claude-vscode.acceptProposedDiff', kind: 'accept' },
+  { command: 'claude-vscode.rejectProposedDiff', kind: 'reject' },
+];
 
 export function toRangeDto(range: vscode.Range): RangeDto {
   return {
@@ -277,6 +288,7 @@ export class EditorService {
       originalEditorId: original.id,
       modifiedEditorId: modified.id,
       preserveFocus: options.preserveFocus === true,
+      actions: right.uri.scheme === PROPOSED_EDIT_SCHEME ? PROPOSED_EDIT_ACTIONS : [],
     });
   }
 

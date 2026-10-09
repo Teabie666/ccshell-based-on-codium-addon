@@ -195,6 +195,12 @@ export interface ContextMenuItemDto {
 // extension host mirrors them from `document.didChange`, and asks the renderer to apply
 // its own edits. See docs/ARCHITECTURE.md ("文档和编辑器").
 
+/**
+ * A file's text on disk, read-only, whatever its editor holds (the file URI with this
+ * scheme): the left side of "Compare Active File with Saved".
+ */
+export const SAVED_FILE_SCHEME = 'ccshell-saved';
+
 /** 0-based, like `vscode.Position`. */
 export interface PositionDto {
   readonly line: number;
@@ -249,6 +255,12 @@ export interface ShowTextEditorParams {
   readonly selection?: RangeDto;
 }
 
+/** A button above a diff that runs an extension command (with the diff tab made active first). */
+export interface DiffActionDto {
+  readonly command: string;
+  readonly kind: 'accept' | 'reject';
+}
+
 export interface ShowDiffEditorParams {
   readonly tabId: string;
   readonly title: string;
@@ -257,6 +269,7 @@ export interface ShowDiffEditorParams {
   readonly originalEditorId: string;
   readonly modifiedEditorId: string;
   readonly preserveFocus: boolean;
+  readonly actions: readonly DiffActionDto[];
 }
 
 export interface RendererInitData {

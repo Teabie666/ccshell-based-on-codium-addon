@@ -71,8 +71,9 @@ function registerEditorCommands(commands: CommandRegistry, documents: TextDocume
     const document = await documents.open(uri);
     await editors.showTextDocument(document, showOptionsFrom(columnOrOptions));
   });
+  const toUri = (value: unknown): vscode.Uri => (typeof value === 'string' ? Uri.parse(value) : (value as vscode.Uri));
   commands.registerBuiltin('vscode.diff', async (left, right, title, options) => {
-    const [original, modified] = await Promise.all([documents.open(left as vscode.Uri), documents.open(right as vscode.Uri)]);
+    const [original, modified] = await Promise.all([documents.open(toUri(left)), documents.open(toUri(right))]);
     const label = typeof title === 'string' && title ? title : `${original.fileName} ↔ ${modified.fileName}`;
     await editors.openDiff(original, modified, label, showOptionsFrom(options));
   });

@@ -387,6 +387,23 @@ body.resizing {
   min-width: 0;
 }
 
+/* Above a proposed diff: what it is, and Accept / Reject. */
+.diff-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: none;
+  padding: 4px 10px;
+  border-bottom: 1px solid var(--vscode-editorGroupHeader-tabsBorder, var(--vscode-panel-border, transparent));
+  background: var(--vscode-editor-background);
+}
+
+.diff-toolbar-hint {
+  flex: 1 1 auto;
+  min-width: 0;
+  color: var(--vscode-descriptionForeground);
+}
+
 /* Monaco's widgets (find, suggest, hover) follow the shell's square corners. */
 .monaco-editor *,
 .monaco-diff-editor * {

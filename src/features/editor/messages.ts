@@ -13,4 +13,11 @@ export const t = defineMessages('editor', {
   revertCommand: 'Revert File',
   findCommand: 'Find',
   loadFailed: 'The editor failed to load: {0}',
+  proposedChanges: 'Proposed changes',
+  accept: 'Accept',
+  reject: 'Reject',
+  acceptCommand: 'Accept Proposed Changes',
+  rejectCommand: 'Reject Proposed Changes',
+  compareWithSaved: 'Compare Active File with Saved',
+  compareWithSavedTitle: '{0} (on disk) ↔ {0}',
 });
