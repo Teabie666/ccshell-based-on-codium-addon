@@ -78,6 +78,9 @@ Monaco、Shiki 和 Markdown 渲染都在第一次用到时才加载（renderer �
 - **设置的贡献点** `core/settings.ts`：模块用 `ISettings.register` 声明自己的设置：键、值的 JSON schema（类型、默认值、说明、枚举、上下限……）、设置界面里的分区。插件的 `contributes.configuration` 从它的清单读出来一并声明；给 VS Code 界面用、在 ccshell 里没意义的几项标成 `hidden`（不在设置界面列出，但留在 schema 里）。读值用 `get(键, 兜底)`：用户的值，否则声明的默认值。
 - **设置编辑器**（`features/settings`）是内容面板的一个标签页，照 VS Code 的设置界面：按类型给控件，和默认值相同的值不写进文件（保持 settings.json 简短）。**settings.json** 用普通文本标签页打开，Monaco 的 JSON 语言服务（单独的 `json.worker`）按所有声明生成的 schema 给补全、悬停说明和校验。注意：JSON 语言服务的 `fileMatch` 是 glob（前面自动加 `**/`），拿去匹配的是解码后的 URI，所以给的是"上级文件夹/settings.json"，不是完整 URI。
 - **编辑器设置**用 VS Code 的键名和默认值（`editor.*`、`diffEditor.*`）。字体相关的（`editor.fontFamily` 等）由主进程算成主题的字体变量，webview 和编辑器共用；其余的由编辑器模块转成 Monaco 选项，改了实时作用到所有文本和 diff 编辑器。加一项设置：在模块里 `register` 声明，`get` 读，`onDidChange` 里重新应用。
+- **settings.json 比设置界面全**：设置界面只列常用的；Monaco 的编辑器选项自带 JSON schema（VS Code 的 `editor.*` 设置就是从它生成的，说明文字随 Monaco 的语言包），编辑器模块加载 Monaco 后把还没声明的都登记成 `hidden` 设置（`monacoOptionDefinitions`）；diff 编辑器的其余选项 Monaco 没有 schema，照 VS Code 的键名手写声明。settings.json 里的 `editor.*` / `diffEditor.*` 只要声明过，就转成 Monaco 的嵌套选项（`editor.minimap.side` → `minimap.side`，`diffEditor.wordWrap` → `diffWordWrap`）；没声明的忽略（跟 VS Code 一样），所以碰不到 `readOnly`、`automaticLayout` 这类不该开放的选项。字体走主题变量、缩进走模型（`applyIndentation`），不经这条路。
+- **默认设置（JSON）**：只读的 Monaco 编辑器（`TextEditorService.createViewer`，背后没有文档，插件看不到），内容由所有声明生成（`defaultSettingsText`），声明变了（比如插件的设置晚到）跟着刷新。查找命令找当前有焦点的编辑器（`focusedCodeEditor`），所以 Ctrl+F 在它里面也能用。
+- **写 settings.json**：先写临时文件再 rename（`host/node/jsonFile.ts`）。Windows 上目标文件被别的进程打开着（读它的程序、杀毒软件、同步盘）时 rename 会 EPERM，所以短暂重试，跟 graceful-fs 一样。写入排队执行，一次失败不影响后面的。
 
 ## 加功能该改哪里
 
