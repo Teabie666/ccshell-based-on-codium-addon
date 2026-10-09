@@ -54,7 +54,7 @@ export class SettingsStore extends Disposable {
 
   /** Sets or (with `undefined`) removes one top-level key. */
   set(key: string, value: unknown): Promise<void> {
-    this.writeQueue = this.writeQueue.then(async () => {
+    const write = this.writeQueue.then(async () => {
       let text = '';
       try {
         text = await fs.promises.readFile(this.filePath, 'utf8');
@@ -68,7 +68,9 @@ export class SettingsStore extends Disposable {
       await writeFileAtomic(this.filePath, applyEdits(text, edits));
       this.reload();
     });
-    return this.writeQueue.catch((error: unknown) => {
+    // A failed write must not fail the ones queued after it.
+    this.writeQueue = write.catch(() => undefined);
+    return write.catch((error: unknown) => {
       this.logger.error(`failed to write setting ${key}`, error);
       throw error;
     });
