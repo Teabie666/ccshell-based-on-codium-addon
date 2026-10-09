@@ -7,7 +7,7 @@ export const t = defineMessages('language', {
   selectDisplayLanguage: 'Select Display Language',
   followSystem: 'Follow System',
   currentSetting: '{0} (current)',
-  restartToApply: 'The display language changes to "{0}" after vilaus restarts.',
+  restartToApply: 'The display language changes to "{0}" after Vilausity restarts.',
   restart: 'Restart',
-  languageSetting: 'The display language of vilaus. Takes effect after a restart.',
+  languageSetting: 'The display language of Vilausity. Takes effect after a restart.',
 });

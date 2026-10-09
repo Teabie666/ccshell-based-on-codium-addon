@@ -1,6 +1,6 @@
 # Vilausity
 
-围绕 Claude Code 插件的轻量工作台（代号，正式名字最后定）。在 VS Code 之外，原样运行官方的 Claude Code VS Code 插件，再配上 VS Code 的编辑器内核 Monaco，用 Claude app 式的窗口结构加上 VS Code 的视觉风格。
+围绕 Claude Code 插件的轻量工作台（简称 vilaus）。在 VS Code 之外，原样运行官方的 Claude Code VS Code 插件，再配上 VS Code 的编辑器内核 Monaco，用 Claude app 式的窗口结构加上 VS Code 的视觉风格。
 
 > 插件本身（`anthropic.claude-code`）是 Anthropic 的专有软件，Vilausity 不包含、不修改、不分发它，运行时从本机已安装的位置加载（M4 起从 Open VSX 下载）。
 

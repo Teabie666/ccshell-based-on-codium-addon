@@ -9,7 +9,7 @@ export const t = defineMessages('core', {
   cancel: 'Cancel',
   openConversations: 'Open conversations',
   sessions: 'Sessions',
-  startupFailed: 'vilaus failed to start: {0}',
+  startupFailed: 'Vilausity failed to start: {0}',
   categoryView: 'View',
   categoryDeveloper: 'Developer',
   categoryPreferences: 'Preferences',
