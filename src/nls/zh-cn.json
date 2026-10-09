@@ -135,6 +135,7 @@
   "language.restart": "重启",
   "language.restartToApply": "重启 Vilausity 后，显示语言将切换为“{0}”。",
   "language.selectDisplayLanguage": "选择显示语言",
+  "language.translateExtensionUiSetting": "用显示语言显示 Claude Code 插件自己的界面（按钮、菜单、提示、会话列表）。对话内容永远不会被翻译。只在中文下起作用。",
   "main.copy": "复制",
   "main.copyLink": "复制链接地址",
   "main.cut": "剪切",

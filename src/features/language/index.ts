@@ -6,7 +6,8 @@
 
 import { SettingsSection } from '../../core/messages';
 import type { ShellModule } from '../../core/module';
-import { ICommands, IDialogs, INative, ISettings } from '../../core/serviceIds';
+import { ICommands, IDialogs, INative, ISettings, IWebviewFrames } from '../../core/serviceIds';
+import { TRANSLATE_EXTENSION_UI_SETTING } from '../../platform/extensionStrings';
 import { LANGUAGE_NAMES, LANGUAGE_SETTING, type UiLanguageSetting } from '../../platform/nls';
 import { t } from './messages';
 
@@ -58,7 +59,18 @@ export const languageModule: ShellModule = {
             description: t('languageSetting'),
           },
         },
+        {
+          key: TRANSLATE_EXTENSION_UI_SETTING,
+          section: SettingsSection.workbench,
+          order: 4,
+          schema: { type: 'boolean', default: true, description: t('translateExtensionUiSetting') },
+        },
       ]),
+    );
+
+    // Main decides (language, setting) and renders new webviews accordingly; open ones follow here.
+    subscriptions.add(
+      native.on('extensionTranslationsChanged', ({ translations }) => services.get(IWebviewFrames).setTranslations(translations)),
     );
 
     // Comes from main whether the language was picked above or edited in settings.json.

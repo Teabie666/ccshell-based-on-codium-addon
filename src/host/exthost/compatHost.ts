@@ -8,6 +8,7 @@ import * as path from 'node:path';
 import type { MessagePortMain } from 'electron';
 import type { CompatHost, OutputSink } from '../../compat/vscode/host';
 import { Emitter } from '../../platform/event';
+import { ExtensionTranslator, translateExtensionUi } from '../../platform/extensionStrings';
 import type { RpcEndpoint } from '../../platform/ipc';
 import type { ILogger } from '../../platform/log';
 import type {
@@ -93,6 +94,12 @@ export function createCompatHost(options: {
   const reported = new Set<string>();
   const unimplementedLog = new FileAppender(path.join(init.paths.logs, 'shim-unimplemented.log'));
 
+  // The extension's notifications, quick picks and input boxes show in the display language
+  // (M3.5), as its pages do. Only what is shown changes: answers are the extension's own items.
+  const translator = init.extensionTranslations ? new ExtensionTranslator(init.extensionTranslations) : undefined;
+  const uiText = <T extends string | undefined>(text: T): T =>
+    translator && text && translateExtensionUi(settingsValues) ? ((translator.translate(text) ?? text) as T) : text;
+
   const host: CompatHost = {
     logger,
     app: init.app,
@@ -121,9 +128,33 @@ export function createCompatHost(options: {
     },
 
     ui: {
-      showMessage: (request) => renderer.call('ui.showMessage', request),
-      showQuickPick: (request) => renderer.call('ui.showQuickPick', request),
-      showInputBox: (request) => renderer.call('ui.showInputBox', request),
+      showMessage: (request) =>
+        renderer.call('ui.showMessage', {
+          ...request,
+          message: uiText(request.message),
+          detail: uiText(request.detail),
+          items: request.items.map(uiText),
+        }),
+      showQuickPick: (request) =>
+        renderer.call('ui.showQuickPick', {
+          ...request,
+          title: uiText(request.title),
+          placeHolder: uiText(request.placeHolder),
+          items: request.items.map((item) => ({
+            ...item,
+            label: uiText(item.label),
+            description: uiText(item.description),
+            detail: uiText(item.detail),
+          })),
+        }),
+      showInputBox: (request) =>
+        renderer.call('ui.showInputBox', {
+          ...request,
+          title: uiText(request.title),
+          prompt: uiText(request.prompt),
+          placeHolder: uiText(request.placeHolder),
+          validationMessage: uiText(request.validationMessage),
+        }),
     },
 
     webviews: {

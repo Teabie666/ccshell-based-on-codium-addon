@@ -34,6 +34,40 @@ interface WebviewRequest {
  */
 const CHAT_INPUT_FORM = 'form:has([role="textbox"][aria-label="Message input"])';
 
+/** The session list view and the plan preview panel (anthropic.claude-code 2.1.282). */
+const SESSION_LIST_VIEW_TYPE = 'claudeVSCodeSessionsList';
+const PLAN_PREVIEW_VIEW_TYPE = 'claudePlanPreview';
+
+/**
+ * Where the extension's pages show content rather than their own UI, which the translation
+ * of the UI text leaves alone (anthropic.claude-code 2.1.282; the conversation and the session
+ * list are one bundle, so one list serves both): the conversation; Markdown (a plan in a
+ * permission prompt); a user message wherever it is repeated; what Claude asks in a question
+ * card (tab header, question, options); what a permission prompt shows of the tool call (its
+ * description, file, JSON input; a command is editable, which the translation skips anyway);
+ * session, group and worktree names; the session title in the conversation's header.
+ */
+const PAGE_CONTENT = [
+  '[aria-label="Claude Code conversation"]',
+  '.root_-a7MRw',
+  '.userMessage_07S1Yg',
+  '.navTabLabel_hONcXw',
+  '.questionTextLarge_hONcXw',
+  '.optionLabel_hONcXw',
+  '.optionDescription_hONcXw',
+  '.permissionRequestDescription_qlaBag',
+  '.permissionPath_qlaBag',
+  '.inputJson_qlaBag',
+  '.sessionName_OOQiHg',
+  '.sessionName_AsP4Bg',
+  '.groupName_OOQiHg',
+  '.worktreePillName_OOQiHg',
+  '.titleText_aqhumA',
+].join(', ');
+
+/** The plan preview's plan, and the text a comment there quotes. */
+const PLAN_PREVIEW_CONTENT = '#content, #selected-text-preview';
+
 /**
  * The session a conversation panel's page shows, from the state it saves
  * (anthropic.claude-code 2.1.282: `{ sessionID, sessionWithNoTranscript, ... }`, saved again
@@ -151,7 +185,17 @@ export class ClaudeWebviewBridge implements WebviewMessageInterceptor {
   }
 
   pageHints(webview: WebviewImpl): WebviewPageHints | undefined {
-    return webview.viewType === CHAT_PANEL_VIEW_TYPE ? { commentsAnchor: CHAT_INPUT_FORM } : undefined;
+    switch (webview.viewType) {
+      case CHAT_PANEL_VIEW_TYPE:
+        return { commentsAnchor: CHAT_INPUT_FORM, untranslated: PAGE_CONTENT };
+      case SESSION_LIST_VIEW_TYPE:
+        return { untranslated: PAGE_CONTENT };
+      case PLAN_PREVIEW_VIEW_TYPE:
+        return { untranslated: PLAN_PREVIEW_CONTENT };
+      default:
+        // Another page (a newer extension's): not translated until its content is known.
+        return undefined;
+    }
   }
 
   /**

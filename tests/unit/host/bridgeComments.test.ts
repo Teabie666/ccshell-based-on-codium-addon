@@ -165,4 +165,15 @@ describe('ClaudeWebviewBridge comment attachment', () => {
     assert.ok((hints.commentsAnchor ?? '').length > 0);
     assert.equal(bridge.pageHints(other), undefined);
   });
+
+  test('pageHints mark the content of the pages whose UI is translated, and no other page', () => {
+    const { bridge } = makeBridge(new CommentStore(), []);
+    const conversation = bridge.pageHints(makeWebview('p1', CHAT_PANEL_VIEW_TYPE))?.untranslated ?? '';
+    const sessionList = bridge.pageHints(makeWebview('v1', 'claudeVSCodeSessionsList'))?.untranslated ?? '';
+    const planPreview = bridge.pageHints(makeWebview('p2', 'claudePlanPreview'))?.untranslated ?? '';
+    assert.ok(conversation.includes('[aria-label="Claude Code conversation"]'));
+    assert.equal(sessionList, conversation);
+    assert.ok(planPreview.includes('#content'));
+    assert.equal(bridge.pageHints(makeWebview('o1', 'someOtherView'))?.untranslated, undefined);
+  });
 });

@@ -18,14 +18,17 @@ import {
   setUiLanguage,
   type UiLanguage,
 } from '../../platform/nls';
+import { TRANSLATE_EXTENSION_UI_SETTING, translateExtensionUi } from '../../platform/extensionStrings';
 import {
   IpcChannel,
   type AppInfo,
+  type ExtensionTranslations,
   type ExtHostInitData,
   type MainApiForRenderer,
   type ThemeData,
 } from '../../platform/protocol';
 import { APP_ORIGIN } from '../../platform/webviewUrls';
+import { extensionTranslations } from '../../nls/extensionPacks';
 import { languagePack } from '../../nls/packs';
 import { workspaceKey } from '../node/paths';
 import type { AppPaths } from './appPaths';
@@ -81,6 +84,8 @@ export class ShellApp extends Disposable {
   private readonly themesDir: string;
   /** The display language of this run; a different setting applies after a restart. */
   private readonly language: UiLanguage;
+  /** The extension UI's translations in this run's language, if there are any. */
+  private readonly extensionTable: ExtensionTranslations | undefined;
   private theme: ThemeData;
   private extension: LocatedExtension | undefined;
   private window: ShellWindow | undefined;
@@ -105,7 +110,8 @@ export class ShellApp extends Disposable {
     const themeId = env.args.theme ?? stringSetting(this.settings.all[THEME_SETTING]) ?? DEFAULT_THEME_ID;
     this.theme = withFontVariables(loadTheme(this.themesDir, themeId, this.logger), this.settings.all);
     const bootstrap = fs.readFileSync(path.join(env.appDir, 'webview-bootstrap.js'), 'utf8');
-    this.documents = new WebviewDocumentStore(bootstrap, () => this.theme);
+    this.extensionTable = extensionTranslations(this.language);
+    this.documents = new WebviewDocumentStore(bootstrap, () => this.theme, () => this.extensionTranslations());
   }
 
   async start(): Promise<void> {
@@ -134,6 +140,9 @@ export class ShellApp extends Disposable {
         this.window?.emit('settingsChanged', { values: this.settings.all, keys });
         if (keys.some((key) => THEME_SETTING_KEYS.has(key))) {
           this.reloadTheme();
+        }
+        if (keys.includes(TRANSLATE_EXTENSION_UI_SETTING) && this.extensionTable) {
+          this.window?.emit('extensionTranslationsChanged', { translations: this.extensionTranslations() ?? null });
         }
         if (keys.includes(LANGUAGE_SETTING)) {
           const wanted = this.wantedLanguage();
@@ -222,6 +231,11 @@ export class ShellApp extends Disposable {
     await host.rpc.call('init', this.createInitData(extension), [port1]);
     window.sendExtHostPort(port2);
     window.emit('extensionHostState', { state: 'running' });
+  }
+
+  /** The table webviews translate the extension's UI with now: the setting can turn it off. */
+  private extensionTranslations(): ExtensionTranslations | undefined {
+    return this.extensionTable && translateExtensionUi(this.settings.all) ? this.extensionTable : undefined;
   }
 
   private wantedLanguage(): UiLanguage {
@@ -334,6 +348,8 @@ export class ShellApp extends Disposable {
       logLevel: this.env.logLevel,
       app: this.appInfo(),
       themeKind: this.theme.kind,
+      // Whatever the setting says now: the extension host follows it as it changes.
+      extensionTranslations: this.extensionTable,
     };
   }
 

@@ -15,6 +15,7 @@ import type {
 import { CommentsHost } from './comments';
 import { DEFAULT_WEBVIEW_STYLES } from './defaultStyles';
 import { InPageFinder } from './find';
+import { PageTranslator } from './translate';
 
 interface VsCodeApi {
   postMessage(message: unknown): void;
@@ -80,6 +81,10 @@ const THEME_CLASSES = [
   // Pages that have a place for comment blocks (a conversation's input) say where it is.
   const anchor = data.hints?.commentsAnchor;
   const comments = anchor ? new CommentsHost(anchor, (event) => post({ kind: 'comments', event })) : undefined;
+  // Pages whose content the bridge knows can show the extension's UI text translated.
+  const untranslated = data.hints?.untranslated;
+  const translator = untranslated !== undefined ? new PageTranslator(untranslated) : undefined;
+  translator?.set(data.translations);
 
   // Control messages from the shell are consumed here and never reach the extension.
   window.addEventListener(
@@ -107,6 +112,9 @@ const THEME_CLASSES = [
           onDomReady(() => comments?.update(view));
           break;
         }
+        case 'translations':
+          translator?.set(control.translations ?? undefined);
+          break;
       }
     },
     true,

@@ -5,7 +5,7 @@
  * scripts run, mirroring what VS Code's `pre/index.html` does.
  */
 
-import type { ThemeData, WebviewBootstrapData, WebviewDocument } from '../../platform/protocol';
+import type { ExtensionTranslations, ThemeData, WebviewBootstrapData, WebviewDocument } from '../../platform/protocol';
 
 export class WebviewDocumentStore {
   private readonly documents = new Map<string, WebviewDocument>();
@@ -13,6 +13,8 @@ export class WebviewDocumentStore {
   constructor(
     private readonly bootstrapSource: string,
     private readonly getTheme: () => ThemeData,
+    /** The table that translates the extension's UI, when that is on. */
+    private readonly getTranslations: () => ExtensionTranslations | undefined = () => undefined,
   ) {}
 
   set(document: WebviewDocument): void {
@@ -44,6 +46,8 @@ export class WebviewDocumentStore {
       state: document.state,
       theme: this.getTheme(),
       hints: document.hints,
+      // Only pages whose content the bridge knows are translated.
+      translations: document.hints?.untranslated !== undefined ? this.getTranslations() : undefined,
     };
     return injectBootstrap(allowInlineFonts(document.html), this.bootstrapSource, data);
   }

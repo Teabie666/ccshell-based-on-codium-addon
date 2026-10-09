@@ -10,6 +10,7 @@ import type { ILogger } from '../platform/log';
 import type {
   CommentsHostEvent,
   CommentsViewDto,
+  ExtensionTranslations,
   FindDirection,
   KeyEventDto,
   ShellToWebviewControl,
@@ -238,6 +239,14 @@ export class WebviewFrames {
 
   setTheme(theme: ThemeData): void {
     const control: ShellToWebviewControl = { ccwControl: 'theme', theme };
+    for (const frame of this.frames.values()) {
+      frame.post(control);
+    }
+  }
+
+  /** Translates the extension's UI text in every webview that can be (see WebviewPageHints); null: stop. */
+  setTranslations(translations: ExtensionTranslations | null): void {
+    const control: ShellToWebviewControl = { ccwControl: 'translations', translations };
     for (const frame of this.frames.values()) {
       frame.post(control);
     }
