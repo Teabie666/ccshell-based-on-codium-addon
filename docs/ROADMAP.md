@@ -146,7 +146,7 @@ API 接口（`features/providers`）
 - [ ] 目标环境：干净的 Windows 10/11 x64，只有安装包和网络；不需要 VS Code / VSCodium、单独的 Claude Code CLI、Node、Python、Git
 - [ ] 发布到 GitHub Releases，新版本手动下载安装（不做自动更新）；不做代码签名，发布说明写清楚 SmartScreen 怎么放行
 - [ ] 全新环境测试：临时 user-data-dir、不依赖 VSCodium、模拟没登录的情况
-- [ ] 干净的 Windows 虚拟机里从零测一遍（开发机没有 Windows Sandbox）：安装 → 首次启动下载插件 → 登录或配置 API → 发消息、审批改文件；没装 Git 时 Claude 用 PowerShell
+- [ ] 发布后交给几位使用者，在各自的电脑上从零试用：安装 → 首次启动下载插件 → 登录或配置 API → 发消息、审批改文件（没装 Git 的电脑上 Claude 用 PowerShell）；收集问题
 - [ ] 装到 Program Files，分别用普通权限和管理员权限运行，再卸载
 
 ## M6 名字、图标、视觉打磨：单独讨论
