@@ -10,14 +10,14 @@
  *   extension -> webview  { type: 'from-extension', message: { type: 'response', requestId, response } }
  *
  * Keep this the only place outside compat/ that knows about those shapes, and about the
- * extension's pages (the selectors in the page hints).
+ * extension's pages (the selectors in the page hints, the state they save).
  */
 
 import { CHAT_PANEL_VIEW_TYPE, type WebviewImpl, type WebviewMessageInterceptor } from '../../compat/vscode/webviews';
 import type { OsBackend } from '../../compat/vscode/host';
 import type { ILogger } from '../../platform/log';
 import type { WebviewPageHints } from '../../platform/protocol';
-import { formatComments, type CommentStore } from './comments';
+import { formatComments, type PendingComments } from './comments';
 
 interface WebviewRequest {
   readonly type: 'request';
@@ -34,6 +34,23 @@ interface WebviewRequest {
  */
 const CHAT_INPUT_FORM = 'form:has([role="textbox"][aria-label="Message input"])';
 
+/**
+ * The session a conversation panel's page shows, from the state it saves
+ * (anthropic.claude-code 2.1.282: `{ sessionID, sessionWithNoTranscript, ... }`, saved again
+ * whenever the page's session changes). A new conversation gets a session id at once, but
+ * until its first prompt the page marks it `sessionWithNoTranscript`: such a session is not
+ * resumed (a restored panel starts over under a new id), so it does not count yet.
+ */
+export function conversationSessionId(state: unknown): string | undefined {
+  if (!isRecord(state)) {
+    return undefined;
+  }
+  const sessionId = state.sessionID;
+  return typeof sessionId === 'string' && sessionId.length > 0 && state.sessionWithNoTranscript !== sessionId
+    ? sessionId
+    : undefined;
+}
+
 export interface BridgeOptions {
   /**
    * Whether vilaus can show diff editors. Until M2 it cannot, and the webview must
@@ -41,7 +58,7 @@ export interface BridgeOptions {
    */
   readonly diffEditorAvailable: () => boolean;
   /** Comments waiting for their conversation's next message. */
-  readonly comments: CommentStore;
+  readonly comments: PendingComments;
   /** For the paths in comments: relative to the workspace when inside it. */
   readonly workspaceFolders: readonly string[];
 }

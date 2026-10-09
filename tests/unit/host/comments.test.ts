@@ -1,7 +1,16 @@
 import { describe, test } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { CommentStore, displayPath, formatComments, sanitizeComments } from '../../../src/host/exthost/comments';
+import type { StorageBackend } from '../../../src/compat/vscode/host';
+import {
+  CommentStore,
+  ConversationComments,
+  displayPath,
+  formatComments,
+  sanitizeComments,
+  type CommentPanels,
+} from '../../../src/host/exthost/comments';
+import { Emitter } from '../../../src/platform/event';
 import type { CommentDto } from '../../../src/platform/protocol';
 
 function comment(id: string, overrides: Partial<CommentDto> = {}): CommentDto {
@@ -16,12 +25,55 @@ function comment(id: string, overrides: Partial<CommentDto> = {}): CommentDto {
   };
 }
 
-function track(store: CommentStore): string[] {
+function track(source: { onDidChange: CommentStore['onDidChange'] }): string[] {
   const changed: string[] = [];
-  store.onDidChange((webviewId) => {
-    changed.push(webviewId);
+  source.onDidChange((id) => {
+    changed.push(id);
   });
   return changed;
+}
+
+/** Open panels whose webview state is a session id, or undefined before the page names one. */
+class FakePanels implements CommentPanels {
+  allPanels: { webview: { id: string; state: unknown } }[] = [];
+  private readonly emitter = new Emitter<void>();
+  readonly onDidChangePanels = this.emitter.event;
+
+  open(id: string, session?: string): { webview: { id: string; state: unknown } } {
+    const panel = { webview: { id, state: session as unknown } };
+    this.allPanels.push(panel);
+    this.emitter.fire();
+    return panel;
+  }
+
+  close(id: string): void {
+    this.allPanels = this.allPanels.filter((panel) => panel.webview.id !== id);
+    this.emitter.fire();
+  }
+
+  /** The page saves a state naming a session (WebviewManager fires for every state). */
+  showSession(id: string, session: string | undefined): void {
+    this.allPanels.find((panel) => panel.webview.id === id)!.webview.state = session;
+    this.emitter.fire();
+  }
+}
+
+const sessionOf = (state: unknown): string | undefined => (typeof state === 'string' ? state : undefined);
+
+function setup(saved?: unknown) {
+  const panels = new FakePanels();
+  const writes: unknown[] = [];
+  const storage: StorageBackend = {
+    initial: () => (saved === undefined ? {} : { 'vilaus.comments': saved }),
+    set: (_scope, key, value) => {
+      if (key === 'vilaus.comments') {
+        writes.push(value);
+      }
+    },
+  };
+  const comments = new ConversationComments(panels, sessionOf, storage);
+  const ids = (webviewId: string): string[] => comments.list(webviewId).map((c) => c.id);
+  return { panels, comments, writes, ids };
 }
 
 describe('CommentStore', () => {
@@ -75,13 +127,24 @@ describe('CommentStore', () => {
     assert.deepEqual(store.list('w1'), []);
   });
 
-  test('retain drops the comments of webviews that are gone', () => {
+  test('add appends several at once, skips ids already there, and says whether any were new', () => {
+    const store = new CommentStore();
+    store.add('w1', comment('c1'));
+    const changed = track(store);
+    assert.equal(store.add('w1', comment('c1'), comment('c2'), comment('c2'), comment('c3')), true);
+    assert.deepEqual(store.list('w1').map((c) => c.id), ['c1', 'c2', 'c3']);
+    assert.deepEqual(changed, ['w1']);
+    assert.equal(store.add('w1', comment('c2')), false);
+    assert.equal(store.add('w1'), false);
+    assert.deepEqual(changed, ['w1']);
+  });
+
+  test('keys lists the keys that have comments', () => {
     const store = new CommentStore();
     store.add('w1', comment('c1'));
     store.add('w2', comment('c2'));
-    store.retain(new Set(['w1']));
-    assert.deepEqual(store.list('w1').map((c) => c.id), ['c1']);
-    assert.deepEqual(store.list('w2'), []);
+    store.take('w1');
+    assert.deepEqual(store.keys(), ['w2']);
   });
 
   test('list returns an empty array for an unknown webview', () => {
@@ -160,5 +223,106 @@ describe('formatComments', () => {
       formatComments([c], ['C:\\work\\proj']),
       `Comments on selected text:\n\n[Re: "${'x'.repeat(199)}…" — c1.ts:1] note c1`,
     );
+  });
+});
+
+describe('ConversationComments', () => {
+  test("keeps a session's comments when its panel closes and shows them where the session opens next", () => {
+    const { panels, comments, ids } = setup();
+    panels.open('w1', 'S1');
+    comments.add('w1', comment('c1'));
+    panels.close('w1');
+    assert.deepEqual(ids('w1'), []);
+    panels.open('w2');
+    const changed = track(comments);
+    assert.deepEqual(ids('w2'), []);
+    panels.showSession('w2', 'S1');
+    assert.deepEqual(ids('w2'), ['c1']);
+    assert.deepEqual(changed, ['w2']);
+  });
+
+  test("a new conversation's comments wait on its panel and go to the session it gets, with one change", () => {
+    const { panels, comments, writes, ids } = setup();
+    panels.open('w1');
+    comments.add('w1', comment('c1'));
+    assert.deepEqual(comments.unsessioned('w1').map((c) => c.id), ['c1']);
+    assert.deepEqual(writes, []);
+    const changed = track(comments);
+    panels.showSession('w1', 'S1');
+    assert.deepEqual(changed, ['w1']);
+    assert.deepEqual(ids('w1'), ['c1']);
+    assert.deepEqual(comments.unsessioned('w1'), []);
+    assert.deepEqual(writes.at(-1), { S1: [comment('c1')] });
+    panels.close('w1');
+    panels.open('w2', 'S1');
+    assert.deepEqual(ids('w2'), ['c1']);
+  });
+
+  test('closing a panel that has no session drops its comments', () => {
+    const { panels, comments, writes, ids } = setup();
+    panels.open('w1');
+    comments.add('w1', comment('c1'));
+    panels.close('w1');
+    panels.open('w1');
+    assert.deepEqual(ids('w1'), []);
+    assert.deepEqual(writes, []);
+  });
+
+  test("loads the sessions' comments from workspace storage and writes every change back", () => {
+    const { panels, comments, writes, ids } = setup({ S1: [comment('c1'), 'junk'], S2: 'junk' });
+    panels.open('w1', 'S1');
+    panels.open('w2', 'S2');
+    assert.deepEqual(ids('w1'), ['c1']);
+    assert.deepEqual(ids('w2'), []);
+    comments.add('w2', comment('c2'));
+    assert.deepEqual(writes.at(-1), { S1: [comment('c1')], S2: [comment('c2')] });
+    assert.deepEqual(comments.take('w1').map((c) => c.id), ['c1']);
+    assert.deepEqual(writes.at(-1), { S2: [comment('c2')] });
+  });
+
+  test("a panel that moves to another session shows that session's comments and leaves the first one's", () => {
+    const { panels, comments, ids } = setup();
+    panels.open('w1', 'S1');
+    comments.add('w1', comment('c1'));
+    const changed = track(comments);
+    panels.showSession('w1', 'S2');
+    assert.deepEqual(ids('w1'), []);
+    panels.showSession('w1', 'S1');
+    assert.deepEqual(ids('w1'), ['c1']);
+    assert.deepEqual(changed, ['w1', 'w1']);
+  });
+
+  test('panels on one session share its comments and both hear of changes', () => {
+    const { panels, comments, ids } = setup();
+    panels.open('w1', 'S1');
+    panels.open('w2', 'S1');
+    const changed = track(comments);
+    comments.add('w1', comment('c1'));
+    assert.deepEqual(changed.sort(), ['w1', 'w2']);
+    assert.deepEqual(ids('w2'), ['c1']);
+    comments.update('w2', 'c1', 'edited');
+    assert.equal(comments.list('w1')[0]!.text, 'edited');
+    comments.remove('w1', ['c1']);
+    assert.deepEqual(ids('w2'), []);
+  });
+
+  test('ignores webviews that are no panel', () => {
+    const { comments, ids } = setup();
+    assert.equal(comments.add('nope', comment('c1')), false);
+    assert.deepEqual(ids('nope'), []);
+    assert.deepEqual(comments.take('nope'), []);
+  });
+
+  test('restore puts comments saved with a panel into the session its state names, else back on the panel', () => {
+    const { panels, comments, writes } = setup();
+    // A restored panel gets its state assigned without an event.
+    panels.open('w1').webview.state = 'S1';
+    comments.restore('w1', [comment('c1')]);
+    assert.deepEqual(comments.list('w1').map((c) => c.id), ['c1']);
+    assert.deepEqual(comments.unsessioned('w1'), []);
+    assert.deepEqual(writes.at(-1), { S1: [comment('c1')] });
+    panels.open('w2');
+    comments.restore('w2', [comment('c2')]);
+    assert.deepEqual(comments.unsessioned('w2').map((c) => c.id), ['c2']);
   });
 });

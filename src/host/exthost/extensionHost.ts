@@ -15,8 +15,8 @@ import { RpcEndpoint, type MessageTransport } from '../../platform/ipc';
 import { toDisposable } from '../../platform/lifecycle';
 import type { ILogger } from '../../platform/log';
 import type { ExtHostInitData } from '../../platform/protocol';
-import { ClaudeWebviewBridge } from './bridge';
-import { CommentStore, registerCommentRequests } from './comments';
+import { ClaudeWebviewBridge, conversationSessionId } from './bridge';
+import { ConversationComments, registerCommentRequests } from './comments';
 import { PanelRestore } from './panelRestore';
 import { createCompatHost, type CompatHostHandle, type MainRpc, type RendererRpc } from './compatHost';
 import { readContributions } from './contributions';
@@ -103,12 +103,9 @@ export class ExtensionHost {
     this.services = services;
     registerWorkbenchCommands(services.commands);
     registerEditorRequests(renderer, services, init.workspaceFolders, this.logger.child('editors'));
-    const comments = new CommentStore();
     const webviews = services.webviews;
-    const isConversation = (webviewId: string): boolean => webviews.allPanels.some((panel) => panel.webview.id === webviewId);
-    registerCommentRequests(renderer, comments, isConversation, this.logger.child('comments'));
-    // A closed conversation's comments go with it.
-    webviews.onDidChangePanels(() => comments.retain(new Set(webviews.allPanels.map((panel) => panel.webview.id))));
+    const comments = new ConversationComments(webviews, conversationSessionId, compat.host.storage);
+    registerCommentRequests(renderer, comments, this.logger.child('comments'));
     this.panelRestore = new PanelRestore(webviews, compat.host.storage, comments, this.logger.child('restore'));
     // The content pane shows `vscode.diff` (ADR 0002 held open_diff before it existed).
     webviews.interceptor = new ClaudeWebviewBridge(compat.host.os, this.logger.child('bridge'), {

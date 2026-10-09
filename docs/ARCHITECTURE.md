@@ -87,7 +87,8 @@ Monaco、Shiki 和 Markdown 渲染都在第一次用到时才加载（renderer �
 在内容面板里选中文字写评论，评论显示在对话输入框正上方，随下一条消息发给 Claude（照插件计划评论的做法）。
 
 - **选中按钮**是一个通用的菜单贡献点 `editor/selection`（`MenuId.EditorSelection`）：编辑器里有选区时，这个菜单的按钮浮在选区旁边；命令收到 `EditorSelectionContext`（选中的文字、文档 URI、文件路径、范围，以及 `showWidget`，用来在按钮的位置显示自己的界面）。文本和 diff 编辑器用 Monaco 的 content widget（`features/editor/selectionMenu.ts`）；Markdown 预览自己摆放（渲染时在每个顶层块前插一个隐藏的源码行号标记，选区按最近的标记换算回源码行，`features/markdown/sourceLines.ts`）。评论模块（`features/comments`）往这个菜单里登记"评论"，以后别的功能也可以加按钮。快捷键 Ctrl+Alt+M 作用于当前标签页的选区（`EditorPane.selectionContext`）。
-- **数据在插件进程**：`host/exthost/comments.ts` 的 CommentStore 按对话（聊天面板的 webview）存评论。渲染进程用 `comments.add / update / remove` 修改，收 `comments.didChange` 显示。bridge 在用户发消息（`io_message`）时同步取出评论，作为一个单独的 text 块附在用户打的字后面（斜杠命令不带），然后清空。评论跟对话面板的恢复记录一起存（PanelRestore），重启后回来；关掉对话就丢弃它没发出的评论。
+- **数据在插件进程**：`host/exthost/comments.ts` 的 ConversationComments 按会话（session）存评论，对外按聊天面板的 webview 提供：面板现在显示哪个会话，就读写哪个会话的评论（会话 id 取自插件页面存的 webview 状态，解析写在 bridge 里）。渲染进程用 `comments.add / update / remove` 修改，收 `comments.didChange` 显示。bridge 在用户发消息（`io_message`）时同步取出评论，作为一个单独的 text 块附在用户打的字后面（斜杠命令不带），然后清空。
+- **跟着会话走**：关掉对话标签页，没发的评论留在会话名下，之后从会话列表、Ctrl+Shift+T 或者重启恢复打开这个会话，评论还在；面板换到别的会话，就显示那个会话的评论。会话的评论存在工作区存储（`vilaus.comments`），随时写入。新对话一打开就有会话 id，但发出第一条消息之前会话还没有记录（插件页面在状态里标成 `sessionWithNoTranscript`），这种会话不会被恢复（重启后换一个新 id 重开），所以不算数：这期间的评论先挂在面板上（跟面板的恢复记录一起存，重启后回来），会话有了记录再并进去；一条消息都没发就关掉的对话，评论随面板丢弃。
 - **评论块在插件页面里**：块该放在哪个元素前面是插件页面的知识，只写在 bridge 里，以 `WebviewPageHints.commentsAnchor`（输入框所在 form 的选择器）随页面文档交给引导脚本（`host/webview/comments.ts`）。引导脚本把块插在锚点前，用 MutationObserver 在插件重新渲染后放回原位；块里的事件不会冒泡到插件页面；所有文字由壳算好（包括翻译）再发进去，引导脚本里没有界面文案。编辑在壳里进行（小窗盖在块的位置上）。插件页面会量输入区的高度给消息列表垫底，所以块不会挡住最后一条消息。
 - **后备**：页面一直找不到锚点（插件改了界面，或者输入框还没出来）时，壳在对话下方显示内容相同的评论栏（`features/comments/fallbackBar.ts`），功能不受影响。
 - **发出去的格式**：以 `Comments on selected text:` 开头，每条评论一段：`[Re: "<片段>" — <文件>:<行>] <评论>`。片段压成一行、过长截断；文件是相对工作区的路径；行是 `12` 或 `12-15`。

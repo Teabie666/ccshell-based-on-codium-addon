@@ -1,8 +1,9 @@
 /**
  * Reopens the conversation panels that were open when vilaus last closed, the way VS Code
  * restores webview panels: each panel's last webview state (which carries its session id)
- * is saved, and on start the extension's own WebviewPanelSerializer revives it. A panel's
- * comments not sent yet come back with it.
+ * is saved, and on start the extension's own WebviewPanelSerializer revives it. Comments of a
+ * conversation that has no session yet come back with its panel (a session's are kept apart,
+ * see comments.ts).
  */
 
 import type * as vscode from 'vscode';
@@ -12,7 +13,7 @@ import { ViewColumn } from '../../compat/vscode/types';
 import type { IDisposable } from '../../platform/lifecycle';
 import type { ILogger } from '../../platform/log';
 import type { CommentDto } from '../../platform/protocol';
-import { sanitizeComments, type CommentStore } from './comments';
+import { sanitizeComments, type ConversationComments } from './comments';
 
 const STORAGE_KEY = 'vilaus.openPanels';
 const SAVE_DELAY_MS = 500;
@@ -33,7 +34,7 @@ export class PanelRestore implements IDisposable {
   constructor(
     private readonly webviews: WebviewManager,
     private readonly storage: StorageBackend,
-    private readonly comments: CommentStore,
+    private readonly comments: ConversationComments,
     private readonly logger: ILogger,
   ) {
     this.subscriptions = [
@@ -66,7 +67,7 @@ export class PanelRestore implements IDisposable {
       panel.webview.state = record.state;
       try {
         await serializer.deserializeWebviewPanel(panel, record.state);
-        this.comments.set(panel.webview.id, sanitizeComments(record.comments));
+        this.comments.restore(panel.webview.id, sanitizeComments(record.comments));
         restored++;
         if (record.active) {
           active = panel;
@@ -106,7 +107,7 @@ export class PanelRestore implements IDisposable {
       return;
     }
     const records: PanelRecord[] = this.webviews.allPanels.map((panel) => {
-      const comments = this.comments.list(panel.webview.id);
+      const comments = this.comments.unsessioned(panel.webview.id);
       return {
         viewType: panel.viewType,
         title: panel.title,

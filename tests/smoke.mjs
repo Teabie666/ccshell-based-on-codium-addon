@@ -317,6 +317,39 @@ await step('two comments show above the input, go out with the next message, and
   return `${paragraphs.length} [Re: …] paragraphs sent`;
 });
 
+await step('a comment not sent yet stays with its session: the tab closes, Ctrl+Shift+T brings it back', async () => {
+  const tabs = page.locator('#tabs .tab');
+  const line = page.locator('#content-pane .content-editor:not([hidden]) .view-line', { hasText: 'apples' }).first();
+  await line.click();
+  await press('Home');
+  await press('Shift+End');
+  await press('Control+Alt+M');
+  const form = page.locator('.comment-form-input');
+  await form.waitFor({ timeout: 5000 });
+  await form.fill('papaya-note');
+  await form.press('Enter');
+  const blocks = () => frame.locator('.vilaus-comments .vilaus-comment');
+  await waitFor(async () => (await blocks().count()) === 1, 5000, 'the block above the input');
+  // Ctrl+W closes the conversation only while the focus is in it, not in the editor.
+  await input().click();
+  const count = await tabs.count();
+  await press('Control+W');
+  await waitFor(async () => (await tabs.count()) === count - 1, 10_000, 'the conversation tab to close');
+  await press('Control+Shift+T');
+  await waitFor(async () => (await tabs.count()) === count, 20_000, 'the conversation to reopen');
+  const iframe = page.locator('#main .panel:not([hidden]) .webview-frame');
+  frame = await waitFor(async () => {
+    const candidate = (await iframe.count()) ? await (await iframe.elementHandle())?.contentFrame() : undefined;
+    return candidate && (await candidate.locator('.vilaus-comments .vilaus-comment').count()) === 1 ? candidate : undefined;
+  }, 30_000, 'the comment back above the reopened conversation input');
+  const text = await blocks().first().locator('.vilaus-comment-text').innerText();
+  if (text !== 'papaya-note') throw new Error(`the block says ${JSON.stringify(text)}`);
+  // Not for the plan below.
+  await blocks().first().hover();
+  await blocks().first().locator('[data-action="remove"]').click();
+  await waitFor(async () => (await blocks().count()) === 0, 5000, 'the comment to go');
+});
+
 // Last: Claude may keep planning after the plan is declined.
 await step('in plan mode, the plan preview opens as a content pane tab', async () => {
   await input().click();

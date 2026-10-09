@@ -1,7 +1,7 @@
 import { describe, test } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { ClaudeWebviewBridge, describeShape } from '../../../src/host/exthost/bridge';
+import { ClaudeWebviewBridge, conversationSessionId, describeShape } from '../../../src/host/exthost/bridge';
 import { CommentStore } from '../../../src/host/exthost/comments';
 import { NullLogger } from '../../../src/platform/log';
 import type { WebviewImpl } from '../../../src/compat/vscode/webviews';
@@ -97,6 +97,23 @@ describe('ClaudeWebviewBridge', () => {
     const { bridge, webview, messages } = makeBridge(false);
     assert.equal(bridge.interceptFromWebview(webview, { type: 'io_message', channelId: 'c1', message: 'hi', done: false }), false);
     assert.deepEqual(messages, []);
+  });
+});
+
+describe('conversationSessionId', () => {
+  test('reads the session id a conversation page saves in its state', () => {
+    assert.equal(conversationSessionId({ sessionID: 'abc', sessionUpdatedAt: 1 }), 'abc');
+  });
+
+  test('does not count a new session that has no transcript yet', () => {
+    assert.equal(conversationSessionId({ sessionID: 'abc', sessionWithNoTranscript: 'abc' }), undefined);
+    assert.equal(conversationSessionId({ sessionID: 'abc', sessionWithNoTranscript: undefined }), 'abc');
+  });
+
+  test('is undefined before the page names a session, and for states of another shape', () => {
+    for (const state of [undefined, null, 'abc', {}, { sessionID: '' }, { sessionID: 42 }, { sessionId: 'abc' }]) {
+      assert.equal(conversationSessionId(state), undefined);
+    }
   });
 });
 
