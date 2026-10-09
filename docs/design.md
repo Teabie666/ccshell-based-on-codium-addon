@@ -18,8 +18,9 @@
 2. 术语跟 VS Code 官方简体中文语言包一致：命令面板、颜色主题、首选项、查看、开发人员、撤消 / 恢复、剪切 / 复制 / 粘贴、全选、区分大小写、上一个 / 下一个匹配项、无结果、"第 {0} 项，共 {1} 项"。
 3. 产品名（Claude、Claude Code、Vilausity）、快捷键（Ctrl+N）、设置键名和取值（`zh-cn`）保持原样。
 4. 中文里夹英文时，按 VS Code 的写法在中英文之间留空格（"重启 Claude Code"）；括号里是快捷键时用半角括号（"关闭 (Ctrl+W)"），其余用全角。
-5. 插件自己的界面没有本地化，保持英文；插件出现在壳里的文字（菜单项）由壳按命令 id 给中文名。
-6. 日志、代码注释、提交信息只用英文，不翻译。
+5. 插件自己的界面没有本地化。壳在插件页面里按对照表把界面文字换成中文（M3.5，`src/nls/zh-cn.extension.json`），插件弹在壳里的通知、输入框、选择框用同一张表；插件的菜单项由壳按命令 id 给中文名。
+6. 插件的术语跟 Claude Code 官方中文文档一致（[术语表](https://code.claude.com/docs/zh-CN/glossary)）：功能名保留英文，比如 Plan mode、Auto mode、Hooks、Skills、Subagents、MCP server、Output styles、Plugins、Checkpoint、Effort、Extended thinking、Remote Control、Worktree；工具名（Read、Edit、Bash、Grep）和斜杠命令（`/compact`）也不翻。通用的词照常翻：会话、对话、权限模式、权限规则、设置、工具、上下文窗口、市场、模型。
+7. 日志、代码注释、提交信息只用英文，不翻译。
 
 ## 参照
 
