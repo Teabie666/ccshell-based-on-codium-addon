@@ -34,6 +34,7 @@ import { Highlighting } from './highlighting';
 import { t } from './messages';
 import { loadMonaco, type MonacoApi } from './monaco';
 import { TextEditorPane, editorFontOptions, type TextInputData } from './textEditorPane';
+import { basename, shortDiffTitle } from './titles';
 import { TextModels } from './textModels';
 
 /** The input type of documents shown in a text editor (other modules may claim some, e.g. Markdown). */
@@ -45,9 +46,6 @@ function tabInputId(tabId: string): string {
   return `tab:${tabId}`;
 }
 
-function basename(path: string): string {
-  return path.split(/[\\/]/).pop() || path;
-}
 
 export class TextEditorService {
   private loaded: Promise<{ monaco: MonacoApi; models: TextModels; highlighting: Highlighting }> | undefined;
@@ -125,8 +123,8 @@ export class TextEditorService {
       {
         id: tabInputId(params.tabId),
         typeId: DIFF_INPUT,
-        label: params.title,
-        tooltip: `${params.original.path} ↔ ${params.modified.path}`,
+        label: shortDiffTitle(params.title, [params.original.path, params.modified.path]),
+        tooltip: `${params.title}\n${params.original.path} ↔ ${params.modified.path}`,
         resource: params.modified.uri,
         languageId: params.modified.languageId,
         data,

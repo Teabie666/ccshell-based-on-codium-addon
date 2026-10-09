@@ -1,7 +1,13 @@
 // End-to-end smoke test: drives the real app with Playwright and a real Claude session.
 //   npm run smoke            (build first: npm run build)
-// Uses a throwaway data dir and workspace under .test-data/, and Haiku to keep usage low.
+// Uses a throwaway data dir and workspace under .test-data/, and a small model to keep usage low.
 // Each step prints PASS/FAIL; the process exits non-zero if any step failed.
+//
+// It runs against an API, configured by environment variables:
+//   CCSHELL_SMOKE_API_KEY     sent as ANTHROPIC_API_KEY (x-api-key), or
+//   CCSHELL_SMOKE_AUTH_TOKEN  sent as ANTHROPIC_AUTH_TOKEN (Bearer), e.g. for compatible APIs
+//   CCSHELL_SMOKE_BASE_URL    optional, ANTHROPIC_BASE_URL of an Anthropic-compatible API
+//   CCSHELL_SMOKE_MODEL       optional, default claude-haiku-4-5-20251001
 import { _electron as electron } from 'playwright-core';
 import electronPath from 'electron';
 import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
@@ -9,12 +15,33 @@ import path from 'node:path';
 
 // Anthropic's consumer terms allow automated (scripted) access only through an API key, so
 // this test does not drive the signed-in Claude subscription unless told to explicitly.
-// API mode (endpoint, key and model from the environment) is planned for M2.
-if (!process.argv.includes('--subscription')) {
-  console.error('smoke: not running. Scripted use of a Claude subscription is not allowed by the consumer');
-  console.error('terms, and the API mode of this test is not wired yet (planned for M2). To run it against');
-  console.error('the signed-in account anyway: npm run smoke -- --subscription');
+const subscription = process.argv.includes('--subscription');
+const apiKey = process.env.CCSHELL_SMOKE_API_KEY;
+const authToken = process.env.CCSHELL_SMOKE_AUTH_TOKEN;
+if (!subscription && !apiKey && !authToken) {
+  console.error('smoke: not running. Set CCSHELL_SMOKE_API_KEY or CCSHELL_SMOKE_AUTH_TOKEN (and optionally');
+  console.error('CCSHELL_SMOKE_BASE_URL, CCSHELL_SMOKE_MODEL): scripted use of a Claude subscription is not');
+  console.error('allowed by the consumer terms. To run it against the signed-in account anyway:');
+  console.error('npm run smoke -- --subscription');
   process.exit(2);
+}
+const model = process.env.CCSHELL_SMOKE_MODEL || 'claude-haiku-4-5-20251001';
+
+/** What the extension passes to the claude process (`claudeCode.environmentVariables`). */
+function apiEnvironment() {
+  const variables = { ANTHROPIC_MODEL: model };
+  if (!subscription) {
+    if (process.env.CCSHELL_SMOKE_BASE_URL) variables.ANTHROPIC_BASE_URL = process.env.CCSHELL_SMOKE_BASE_URL;
+    if (apiKey) variables.ANTHROPIC_API_KEY = apiKey;
+    if (authToken) variables.ANTHROPIC_AUTH_TOKEN = authToken;
+    // Background requests (titles...) use the small model; keep every tier on the given one.
+    variables.ANTHROPIC_DEFAULT_HAIKU_MODEL = model;
+    variables.ANTHROPIC_DEFAULT_SONNET_MODEL = model;
+    variables.ANTHROPIC_DEFAULT_OPUS_MODEL = model;
+    variables.CLAUDE_CODE_SKIP_AUTH_LOGIN = '1';
+    variables.CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC = '1';
+  }
+  return Object.entries(variables).map(([name, value]) => ({ name, value }));
 }
 
 const root = path.resolve(import.meta.dirname, '..');
@@ -34,7 +61,10 @@ writeFileSync(
       // Ask before every edit, so the approval flow is exercised.
       'claudeCode.initialPermissionMode': 'default',
       'claudeCode.hideOnboarding': true,
-      'claudeCode.environmentVariables': [{ name: 'ANTHROPIC_MODEL', value: 'claude-haiku-4-5-20251001' }],
+      'claudeCode.disableLoginPrompt': !subscription,
+      // English labels: the steps look for the shell's English buttons.
+      'ccshell.language': 'en',
+      'claudeCode.environmentVariables': apiEnvironment(),
     },
     null,
     2,
@@ -154,6 +184,34 @@ await step('edit rejected inline is not applied', async () => {
   await waitForIdle();
   if (readTarget() !== 'beta') throw new Error(`a.txt changed to "${readTarget()}"`);
   return 'a.txt still beta';
+});
+
+// ---- M2: proposed edits open as diff tabs in the content pane ----------------------------
+
+const diffTab = () => page.locator('#content-pane .content-tab', { hasText: 'a.txt' });
+const diffAction = (kind) => page.locator(`#content-pane .content-editor:not([hidden]) .diff-toolbar [data-action="${kind}"]`);
+
+await step('a proposed edit opens a diff tab; Accept there applies it', async () => {
+  writeFileSync(target, 'beta\n', 'utf8');
+  await send('Use the Edit tool to replace the word beta with delta in a.txt. Do nothing else.');
+  await waitFor(async () => (await diffAction('accept').count()) > 0, RESPONSE_TIMEOUT, 'the diff tab with Accept');
+  const label = await diffTab().first().innerText();
+  await diffAction('accept').click();
+  await waitFor(() => readTarget() === 'delta', RESPONSE_TIMEOUT, 'a.txt to become "delta"');
+  await waitFor(async () => (await diffTab().count()) === 0, 10_000, 'the diff tab to close');
+  await waitForIdle();
+  return `${label.trim()}; a.txt = ${readTarget()}`;
+});
+
+await step('Reject in the diff tab leaves the file as it was', async () => {
+  await send('Use the Edit tool to replace the word delta with omega in a.txt. If it is rejected, stop and do nothing else.');
+  await waitFor(async () => (await diffAction('reject').count()) > 0, RESPONSE_TIMEOUT, 'the diff tab with Reject');
+  await diffAction('reject').click();
+  await waitFor(async () => (await diffTab().count()) === 0, 10_000, 'the diff tab to close');
+  await page.waitForTimeout(3000);
+  await waitForIdle();
+  if (readTarget() !== 'delta') throw new Error(`a.txt changed to "${readTarget()}"`);
+  return 'a.txt still delta';
 });
 
 await step('insert_at_mention puts plain text into the input', async () => {
