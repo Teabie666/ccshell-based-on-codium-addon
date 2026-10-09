@@ -5,6 +5,7 @@
 
 import { Emitter } from '../../platform/event';
 import { DisposableStore } from '../../platform/lifecycle';
+import { workspaceImageUrl } from '../../platform/webviewUrls';
 import type { ILogger } from '../../platform/log';
 import type { EditorHost, EditorInput, EditorPane } from '../../core/editors';
 import type { TextEditorService } from '../editor';
@@ -179,6 +180,7 @@ export class MarkdownPane implements EditorPane {
     for (const heading of this.preview.querySelectorAll('h1, h2, h3, h4, h5, h6')) {
       heading.id ||= slugify(heading.textContent ?? '');
     }
+    this.resolveImages();
     this.preview.scrollTop = scroll;
     await this.highlightCodeBlocks();
   }
@@ -199,6 +201,24 @@ export class MarkdownPane implements EditorPane {
     }
   }
 
+  /** The folder of the document, for relative links and images. */
+  private get folder(): string {
+    return (this.input.tooltip ?? '').replace(/[\\/][^\\/]*$/, '');
+  }
+
+  /** Relative image paths point into the workspace, which main serves to the shell (`ccw://img`). */
+  private resolveImages(): void {
+    for (const image of this.preview.querySelectorAll('img')) {
+      const source = image.getAttribute('src');
+      if (!source || /^[a-z][\w+.-]*:/i.test(source) || source.startsWith('//')) {
+        continue; // https:, data:... stay as they are.
+      }
+      const relative = decodeURIComponent(source.split(/[?#]/, 1)[0]!);
+      const absolute = /^([a-z]:)?[\\/]/i.test(relative) ? relative : `${this.folder}/${relative}`;
+      image.src = workspaceImageUrl(absolute);
+    }
+  }
+
   private onClick(event: MouseEvent): void {
     const anchor = (event.target as Element | null)?.closest('a');
     const href = anchor?.getAttribute('href');
@@ -211,8 +231,7 @@ export class MarkdownPane implements EditorPane {
     } else if (/^(https?|mailto):/i.test(href)) {
       this.links.openExternal(href);
     } else if (!/^[a-z][\w+.-]*:/i.test(href)) {
-      const folder = (this.input.tooltip ?? '').replace(/[\\/][^\\/]*$/, '');
-      this.links.openFile(`${folder}/${decodeURIComponent(href.split('#')[0]!)}`);
+      this.links.openFile(`${this.folder}/${decodeURIComponent(href.split('#')[0]!)}`);
     }
   }
 }

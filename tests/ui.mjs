@@ -338,10 +338,16 @@ await step('Compare Active File with Saved opens a diff tab (vscode.diff)', asyn
   return label;
 });
 
-await step('a Markdown file opens as a preview, with highlighted code, and toggles to source', async () => {
+await step('a Markdown file opens as a preview, with highlighted code and a local image, and toggles to source', async () => {
+  // A 1x1 PNG next to the document.
+  mkdirSync(path.join(workspace, 'img'), { recursive: true });
+  writeFileSync(
+    path.join(workspace, 'img', 'dot.png'),
+    Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==', 'base64'),
+  );
   writeFileSync(
     path.join(workspace, 'notes.md'),
-    '# Plan notes\n\nSee [the sample](src/sample.ts).\n\n```ts\nconst x: number = 1;\n```\n',
+    '# Plan notes\n\nSee [the sample](src/sample.ts).\n\n![dot](img/dot.png)\n\n```ts\nconst x: number = 1;\n```\n',
     'utf8',
   );
   await press('Control+P');
@@ -351,6 +357,11 @@ await step('a Markdown file opens as a preview, with highlighted code, and toggl
   const heading = page.locator('#content-pane .markdown-preview:not([hidden]) h1');
   await waitFor(async () => (await heading.count()) === 1 && (await heading.innerText()) === 'Plan notes', 10_000, 'the rendered heading');
   await waitFor(async () => (await page.locator('#content-pane .markdown-preview pre.shiki').count()) === 1, 10_000, 'a highlighted code block');
+  await waitFor(
+    () => page.locator('#content-pane .markdown-preview img').evaluate((img) => img.complete && img.naturalWidth > 0),
+    5000,
+    'the workspace image to load',
+  );
   await page.locator('#content-pane .editor-toolbar .button', { hasText: 'Open Source' }).click();
   await waitFor(async () => (await editorText()).includes('# Plan notes'), 5000, 'the source view');
   await page.locator('#content-pane .editor-toolbar .button', { hasText: 'Open Preview' }).click();

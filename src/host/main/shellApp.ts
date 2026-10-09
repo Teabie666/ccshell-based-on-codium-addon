@@ -123,6 +123,7 @@ export class ShellApp extends Disposable {
     installCcwProtocol(session.defaultSession, {
       appDir: path.join(this.env.appDir, 'renderer'),
       documents: this.documents,
+      imageRoots: () => this.workspaceFolders,
       logger: this.logger.child('ccw'),
     });
     this.registerRendererHandlers();

@@ -60,14 +60,19 @@ export interface CcwProtocolOptions {
   /** Directory with the built renderer (index.html, main.js, ...). */
   readonly appDir: string;
   readonly documents: WebviewDocumentStore;
+  /** Folders whose images the shell's own views may show (`ccw://img/...`). */
+  readonly imageRoots: () => readonly string[];
   readonly logger: ILogger;
 }
+
+const IMAGE_EXTENSIONS = new Set(['.png', '.jpg', '.jpeg', '.gif', '.webp', '.svg', '.ico', '.bmp']);
 
 const APP_CSP = [
   "default-src 'none'",
   "script-src 'self'",
   "style-src 'self' 'unsafe-inline'",
-  `img-src 'self' ${CCW_SCHEME}: data:`,
+  // https: for images in Markdown previews, as VS Code's preview allows by default.
+  `img-src 'self' ${CCW_SCHEME}: data: https:`,
   `font-src 'self' ${CCW_SCHEME}: data:`,
   `frame-src ${CCW_SCHEME}:`,
   "connect-src 'self'",
@@ -102,6 +107,20 @@ async function route(url: URL, options: CcwProtocolOptions): Promise<Response> {
       return notFound();
     }
     return serveFile(file, { 'Access-Control-Allow-Origin': '*' });
+  }
+  if (host === 'img') {
+    // Images only, and only from the workspace: what a Markdown file there may show.
+    const file = resourcePathFromUrl(url);
+    const allowed =
+      file !== undefined &&
+      IMAGE_EXTENSIONS.has(path.extname(file).toLowerCase()) &&
+      options.imageRoots().some((root) => isSubPath(file, root));
+    if (!allowed) {
+      options.logger.warn(`blocked image outside the workspace: ${url.href}`);
+      return notFound();
+    }
+    // An SVG must not run script in the shell: served with a CSP of its own.
+    return serveFile(file, { 'Content-Security-Policy': "default-src 'none'; style-src 'unsafe-inline'" });
   }
   if (WEBVIEW_ID_PATTERN.test(host)) {
     if (url.pathname !== '/' && url.pathname !== '/index.html') {

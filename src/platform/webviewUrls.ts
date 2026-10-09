@@ -25,9 +25,22 @@ export function webviewIdFromUrl(url: string): string | undefined {
   return WEBVIEW_ID_PATTERN.test(host) ? host : undefined;
 }
 
-/** `C:\Program Files\x.js` -> `ccw://res/C%3A/Program%20Files/x.js` */
-export function resourceUrlForFsPath(fsPath: string): string {
+function encodedPath(fsPath: string): string {
   const forward = fsPath.replace(/\\/g, '/');
   const withSlash = forward.startsWith('/') ? forward : `/${forward}`;
-  return `${CCW_SCHEME}://res${withSlash.split('/').map(encodeURIComponent).join('/')}`;
+  return withSlash.split('/').map(encodeURIComponent).join('/');
+}
+
+/** `C:\Program Files\x.js` -> `ccw://res/C%3A/Program%20Files/x.js` */
+export function resourceUrlForFsPath(fsPath: string): string {
+  return `${CCW_SCHEME}://res${encodedPath(fsPath)}`;
+}
+
+/**
+ * An image in the workspace, for the shell's own views (the Markdown preview):
+ * `C:\w\a.png` -> `ccw://img/C%3A/w/a.png`. Main serves only image files inside the
+ * workspace folders.
+ */
+export function workspaceImageUrl(fsPath: string): string {
+  return `${CCW_SCHEME}://img${encodedPath(fsPath)}`;
 }
