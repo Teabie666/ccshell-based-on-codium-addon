@@ -430,6 +430,37 @@ await step("closing a tab's own window closes the tab", async () => {
   await waitFor(async () => (await contentTabs().count()) === 0, 5000, 'the tab to be gone');
 });
 
+await step('after an extension host crash and restart, open files come back with unsaved changes', async () => {
+  await press('Control+P');
+  await page.locator('.quick-input-filter').fill('sample.ts');
+  await waitFor(async () => (await page.locator('.quick-input-item').count()) > 0, 10_000, 'sample.ts in the list');
+  await page.locator('.quick-input-filter').press('Enter');
+  await waitFor(async () => (await editorText()).includes('answer'), 10_000, 'sample.ts in the pane');
+  await page.locator('#content-pane .monaco-editor .view-lines').click();
+  await page.keyboard.press('Control+End');
+  await page.keyboard.type('// survives the crash');
+  await waitFor(async () => (await page.locator('#content-pane .content-tab.dirty').count()) === 1, 5000, 'the dirty tab');
+
+  const killed = await app.evaluate(({ app: electronApp }) => {
+    const host = electronApp.getAppMetrics().find((metric) => metric.name === 'ccshell extension host');
+    if (host) process.kill(host.pid);
+    return host !== undefined;
+  });
+  if (!killed) throw new Error('extension host process not found');
+  const restart = page.locator('.banner-error .button');
+  await restart.waitFor({ timeout: 15_000 });
+  await restart.click();
+  await waitFor(async () => (await page.locator('#content-pane .content-tab.dirty').count()) === 1, 30_000, 'the file back, dirty');
+  await waitFor(async () => (await editorText()).includes('survives the crash'), 5000, 'the unsaved text back');
+  if (readFileSync(sampleFile, 'utf8').includes('survives the crash')) throw new Error('the unsaved text reached the disk');
+  // Leave it saved and closed for the next steps.
+  await page.locator('#content-pane .monaco-editor .view-lines').click();
+  await press('Control+S');
+  await waitFor(async () => (await page.locator('#content-pane .content-tab.dirty').count()) === 0, 5000, 'the save');
+  await press('Control+W');
+  await waitFor(async () => (await contentTabs().count()) === 0, 5000, 'the tab to close');
+});
+
 await step('the title bar button toggles the empty content pane', async () => {
   await page.locator('.icon-content-pane').click();
   await waitFor(() => page.locator('#content-pane').isVisible(), 5000, 'the pane to show');

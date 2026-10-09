@@ -212,15 +212,50 @@ export class TextEditorService {
     this.contentPane.remove(tabInputId(tabId));
   }
 
-  /** The extension host is gone: its documents cannot be saved any more. */
-  closeAll(): void {
+  /**
+   * The extension host is gone (crashed, or restarting): its tabs and documents go with it.
+   * Returns what to reopen once a new one is up: the open files, with their unsaved text.
+   */
+  closeAll(): ReopenItem[] {
+    const reopen: ReopenItem[] = [];
     for (const tab of this.contentPane.tabs) {
-      if (tab.input.typeId === TEXT_INPUT || tab.input.typeId === DIFF_INPUT) {
-        this.contentPane.remove(tab.input.id);
+      if (tab.input.typeId !== TEXT_INPUT && tab.input.typeId !== DIFF_INPUT) {
+        continue;
       }
+      // Diffs belong to the session that proposed them; files come back.
+      const uri = tab.input.typeId === TEXT_INPUT ? tab.input.resource : undefined;
+      if (uri?.startsWith('file:')) {
+        const entry = this.models?.get(uri);
+        reopen.push({ uri, unsavedText: entry?.isDirty ? entry.model.getValue() : undefined });
+      }
+      this.contentPane.remove(tab.input.id);
     }
     this.models?.disposeAll();
+    return reopen;
   }
+
+  /** Reopens files after an extension host restart, putting their unsaved text back. */
+  async reopen(items: readonly ReopenItem[]): Promise<void> {
+    const rpc = this.connection.rpc;
+    for (const item of items) {
+      try {
+        const shown = await rpc?.call('documents.show', { uri: item.uri, preserveFocus: true, preview: false });
+        const entry = shown && item.unsavedText !== undefined ? this.models?.get(item.uri) : undefined;
+        if (entry && item.unsavedText !== undefined) {
+          // An edit of the new model: it reaches the new extension host and makes it dirty.
+          entry.model.pushEditOperations([], [{ range: entry.model.getFullModelRange(), text: item.unsavedText }], () => null);
+        }
+      } catch (error) {
+        this.logger.warn(`could not reopen ${item.uri}`, error);
+      }
+    }
+  }
+}
+
+export interface ReopenItem {
+  readonly uri: string;
+  /** Set when the file had unsaved changes. */
+  readonly unsavedText: string | undefined;
 }
 
 export const ITextEditors = createServiceId<TextEditorService>('textEditors');
@@ -264,6 +299,7 @@ export const editorModule: ShellModule = {
     const themes = services.get(IThemes);
 
     const editors = new TextEditorService(connection, contentPane, themes, services.get(IDialogs), logger);
+    let reopenAfterRestart: ReopenItem[] = [];
     subscriptions.add(services.register(ITextEditors, editors));
     subscriptions.add(
       services.get(IEditors).register({
@@ -291,9 +327,19 @@ export const editorModule: ShellModule = {
         rpc.handle('document.reload', ({ uri, text }) => editors.modelService?.reload(uri, text));
         rpc.handle('document.didSave', ({ uri }) => editors.modelService?.didSave(uri));
         rpc.handle('document.didChangeOnDisk', ({ uri }) => editors.modelService?.didChangeOnDisk(uri));
+        // Back after a restart: the files that were open come back, unsaved changes included.
+        const items = reopenAfterRestart;
+        reopenAfterRestart = [];
+        if (items.length > 0) {
+          void editors.reopen(items);
+        }
       }),
     );
-    subscriptions.add(connection.onDidDisconnect(() => editors.closeAll()));
+    subscriptions.add(
+      connection.onDidDisconnect(() => {
+        reopenAfterRestart = editors.closeAll();
+      }),
+    );
     subscriptions.add(themes.onDidChange(() => editors.applyTheme()));
 
     const report = trackVisibleEditors(connection, contentPane, layout);
