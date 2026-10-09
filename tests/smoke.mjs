@@ -214,6 +214,21 @@ await step('Reject in the diff tab leaves the file as it was', async () => {
   return 'a.txt still delta';
 });
 
+await step('a file mention in the chat opens the file in a Monaco tab', async () => {
+  await send('Reply with only the word ok. @a.txt');
+  // A mention in a sent message is a chip that opens the file (open_file -> showTextDocument).
+  const chip = frame.locator('[role="button"][title="Open a.txt"]').first();
+  await waitFor(async () => (await chip.count()) > 0, RESPONSE_TIMEOUT, 'the a.txt chip');
+  await waitForIdle();
+  await chip.click();
+  const tab = page.locator('#content-pane .content-tab', { hasText: 'a.txt' });
+  await waitFor(async () => (await tab.count()) > 0, 10_000, 'the a.txt tab');
+  const text = page.locator('#content-pane .content-editor:not([hidden]) .view-lines');
+  await waitFor(async () => (await text.count()) > 0 && (await text.innerText()).includes('delta'), 10_000, 'the file in Monaco');
+  await tab.locator('.tab-close').click();
+  await waitFor(async () => (await tab.count()) === 0, 5000, 'the tab to close');
+});
+
 await step('insert_at_mention puts plain text into the input', async () => {
   const text = 'ccshell-insert-check';
   await frame.evaluate((t) => {
@@ -233,6 +248,21 @@ await step('io_message shape was logged', async () => {
   const line = log.split('\n').find((l) => l.includes('io_message shape:'));
   if (!line) throw new Error('no io_message shape line in exthost.log');
   return line.slice(line.indexOf('io_message shape:'));
+});
+
+// Last: Claude may keep planning after the plan is declined.
+await step('in plan mode, the plan preview opens as a content pane tab', async () => {
+  await input().click();
+  // Shift+Tab cycles the permission mode: manual -> edit automatically -> plan.
+  await input().press('Shift+Tab');
+  await input().press('Shift+Tab');
+  await waitFor(async () => (await frame.getByRole('button', { name: /\bPlan\b/ }).count()) > 0, 5000, 'plan mode');
+  await send('Make a plan to add a line with the word zeta to a.txt. It is a one-step plan; present it right away without exploring.');
+  const preview = page.locator('#content-pane .content-editor:not([hidden]) .webview-frame');
+  await waitFor(async () => (await preview.count()) > 0, RESPONSE_TIMEOUT, 'the plan preview in the content pane');
+  const label = await page.locator('#content-pane .content-tab.active .tab-label').innerText();
+  await clickPermission('No, keep planning');
+  return `tab "${label}"`;
 });
 
 await page.screenshot({ path: path.join(runDir, 'final.png') });

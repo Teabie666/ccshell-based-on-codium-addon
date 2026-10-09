@@ -10,7 +10,7 @@
 
 每个阶段结束都要做：typecheck、`npm test`、`node tests/ui.mjs`（动了 bridge / compat 再跑 `npm run smoke`）；看最新一次的 `shim-unimplemented.log`；确认没往 `C:\Program Files\VSCodium` 写任何东西、git 里没有密钥；用屏幕工具截图，跟 VSCodium 里的同一界面对比；用 `run-dev.cmd` 试用。
 
-测试现状（2026-10-09）：单元 129/129，语言包 0 条缺译，界面 22/22，smoke 9/9（M2 后，用 Anthropic 兼容接口跑的）。
+测试现状（2026-10-09）：单元 129/129，语言包 0 条缺译，界面 22/22，smoke 11/11（M2 后，用 Anthropic 兼容接口跑的）。
 
 ## M0 技术验证：完成（2026-10-08）
 
@@ -70,7 +70,7 @@
 - [x] Ctrl+S 保存，未保存标记，关闭时问是否保存；磁盘上被 Claude 改了：没改过就自动重新载入，改过就在编辑器上方提示
 - [x] compat 的文本文档跟 Monaco 模型对上：open / change（真实增量）/ will-save / save / close 事件
 - [x] Markdown：默认显示渲染后的预览（代码块用 Shiki 上色），可以切到源码（Ctrl+Shift+V）
-- [ ] 计划预览：插件的 `claudePlanPreview` webview 作为内容面板的标签页（路由已做，还没在真实会话里看到）
+- [x] 计划预览：插件的 `claudePlanPreview` webview 作为内容面板的标签页（smoke 验证过）
 - [x] diff 标签页（ADR 0002 已被取代）
   - [x] `vscode.diff` 打开 Monaco DiffEditor 标签页，同时往 `tabGroups` 里加 `TabInputTextDiff(left, right)`，插件 `tabGroups.close` 时关掉标签页
   - [x] 右侧可编辑，改动触发 `workspace.onDidChangeTextDocument`
@@ -83,7 +83,7 @@
 - [x] 日志进面板：`claude-vscode.showLogs` 和聊天里的"打开输出"都调 `outputChannel.show()`，在内容面板打开日志文件（不需要 bridge 拦截）
 - [x] smoke 改成 API 模式：`CCSHELL_SMOKE_API_KEY` 或 `CCSHELL_SMOKE_AUTH_TOKEN`，可选 `CCSHELL_SMOKE_BASE_URL`、`CCSHELL_SMOKE_MODEL`，注入测试设置里的 `claudeCode.environmentVariables`；没配就拒绝运行（`--subscription` 才用登录的账号）
 - [x] smoke 加了 diff 标签页的接受 / 拒绝两项
-- [ ] smoke 再加：点聊天里的文件链接，Monaco 标签页显示高亮内容；计划模式下计划预览进内容面板
+- [x] smoke 再加：点聊天里的文件提及，Monaco 标签页打开该文件；计划模式下计划预览进内容面板
 
 ## M3 评论：未开始
 
