@@ -10,7 +10,7 @@
 
 每个阶段结束都要做：typecheck、`npm test`、`node tests/ui.mjs`（动了 bridge / compat 再跑 `npm run smoke`）；看最新一次的 `shim-unimplemented.log`；确认没往 `C:\Program Files\VSCodium` 写任何东西、git 里没有密钥；用屏幕工具截图，跟 VSCodium 里的同一界面对比；用 `run-dev.cmd` 试用。
 
-测试现状（2026-10-09）：单元 115/115，语言包 33 条缺译（M2 新加的），界面 20/20（M2 进行中）；smoke 7/7（M1 后跑的；M2 动了 bridge 和 compat，还没重跑）。
+测试现状（2026-10-09）：单元 129/129，语言包 33 条缺译（M2 新加的），界面 20/20，smoke 9/9（M2 后，用 Anthropic 兼容接口跑的）。
 
 ## M0 技术验证：完成（2026-10-08）
 
@@ -76,13 +76,14 @@
   - [x] 右侧可编辑，改动触发 `workspace.onDidChangeTextDocument`
   - [x] "接受 / 拒绝"按钮：先把该标签设为 active，再执行 `claude-vscode.acceptProposedDiff` / `rejectProposedDiff`
   - [x] bridge 不再挂起 `open_diff`（`diffEditorAvailable: () => true`）
-  - [ ] 用真实会话验证：提议改动 → diff 标签页 → 接受 / 拒绝 / 聊天里的内嵌审批（smoke 或手动试用）
+  - [x] 用真实会话验证（smoke）：提议改动 → diff 标签页 → 接受 / 拒绝；聊天里的内嵌审批照常能用
   - [x] 额外："Compare Active File with Saved"（跟磁盘上的版本比较），界面测试靠它覆盖 diff 标签页
 - [x] 选区同步：`activeTextEditor`、`visibleTextEditors`、`showTextDocument`、`onDidChangeTextEditorSelection` 接到 Monaco，聊天框能带上当前文件
 - [ ] 标签页可以弹出成独立窗口
 - [x] 日志进面板：`claude-vscode.showLogs` 和聊天里的"打开输出"都调 `outputChannel.show()`，在内容面板打开日志文件（不需要 bridge 拦截）
-- [ ] smoke 改成 API 模式：接口地址、key、模型从环境变量读，注入测试设置里的 `claudeCode.environmentVariables`，不再用登录的订阅账号（条款只允许脚本走 API key；现在没配就拒绝运行）。用哪家的 key 到时候定
-- [ ] smoke 加两项：diff 标签页出现 → 点接受后文件改了，走一遍拒绝文件没变；点文件链接，Monaco 标签页显示高亮内容
+- [x] smoke 改成 API 模式：`CCSHELL_SMOKE_API_KEY` 或 `CCSHELL_SMOKE_AUTH_TOKEN`，可选 `CCSHELL_SMOKE_BASE_URL`、`CCSHELL_SMOKE_MODEL`，注入测试设置里的 `claudeCode.environmentVariables`；没配就拒绝运行（`--subscription` 才用登录的账号）
+- [x] smoke 加了 diff 标签页的接受 / 拒绝两项
+- [ ] smoke 再加：点聊天里的文件链接，Monaco 标签页显示高亮内容；计划模式下计划预览进内容面板
 
 ## M3 评论：未开始
 
