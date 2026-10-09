@@ -70,6 +70,19 @@ export interface ExtHostInitData {
   readonly themeKind: ThemeKind;
 }
 
+/**
+ * What the shell's script in a webview needs to know about the extension's page. Only the
+ * bridge (host/exthost/bridge.ts) knows the extension's pages, so it supplies these; most
+ * webviews have none.
+ */
+export interface WebviewPageHints {
+  /**
+   * CSS selector of the element comment blocks go right before (a conversation's message
+   * input). Set for conversation panels only.
+   */
+  readonly commentsAnchor?: string;
+}
+
 export interface WebviewDocument {
   readonly webviewId: string;
   /** The HTML exactly as the extension assigned it to `webview.html`. */
@@ -78,6 +91,7 @@ export interface WebviewDocument {
   readonly resourceRoots: readonly string[];
   /** Last value passed to `setState`, restored into `getState()` on reload. */
   readonly state?: unknown;
+  readonly hints?: WebviewPageHints;
 }
 
 export interface IconPathDto {
@@ -282,6 +296,24 @@ export interface ShowDiffEditorParams {
   readonly actions: readonly DiffActionDto[];
 }
 
+// ---- comments ----
+//
+// Comments on text selected in the content pane belong to a conversation (by its webview)
+// until the next message, which carries them. The extension host keeps them (the bridge
+// needs them when a message goes out); the renderer adds, edits and shows them.
+
+export interface CommentDto {
+  readonly id: string;
+  /** The text the comment is about, as selected. */
+  readonly quote: string;
+  /** The document it was selected in (`vscode.Uri.toString()`), and the file's path. */
+  readonly uri: string;
+  readonly path: string;
+  /** Where in that document; for a rendered view (Markdown preview), the lines it came from. */
+  readonly range: RangeDto;
+  readonly text: string;
+}
+
 export interface RendererInitData {
   readonly theme: ThemeData;
   readonly workspaceFolders: readonly string[];
@@ -366,6 +398,11 @@ export type ExtHostApiForRenderer = {
   'tab.didActivate': (p: { tabId: string }) => void;
   /** The user closed a text or diff tab. */
   'tab.didClose': (p: { tabId: string }) => void;
+
+  // ---- comments (answered by `comments.didChange`) ----
+  'comments.add': (p: { webviewId: string; comment: CommentDto }) => void;
+  'comments.update': (p: { webviewId: string; id: string; text: string }) => void;
+  'comments.remove': (p: { webviewId: string; ids: readonly string[] }) => void;
 };
 
 /** Served by the renderer, called by the extension host. */
@@ -402,6 +439,9 @@ export type RendererApiForExtHost = {
   'document.didSave': (p: { uri: string }) => void;
   /** An attached document with unsaved changes changed on disk. */
   'document.didChangeOnDisk': (p: { uri: string }) => void;
+
+  /** A conversation's comments, oldest first: added, edited, removed, sent or restored. */
+  'comments.didChange': (p: { webviewId: string; comments: readonly CommentDto[] }) => void;
 };
 
 // ---------------------------------------------------------------------------
@@ -492,7 +532,57 @@ export interface WebviewBootstrapData {
   readonly webviewId: string;
   readonly state: unknown;
   readonly theme: ThemeData;
+  readonly hints?: WebviewPageHints;
 }
+
+/** An element's box in a webview's viewport, in CSS pixels. */
+export interface RectDto {
+  readonly left: number;
+  readonly top: number;
+  readonly width: number;
+  readonly height: number;
+}
+
+/** One comment block as a webview shows it; the shell has already made every text final. */
+export interface CommentBlockDto {
+  readonly id: string;
+  /** The quoted text, already shortened. */
+  readonly quote: string;
+  /** `sample.ts:12`, with the whole path as its tooltip. */
+  readonly source: string;
+  readonly sourceTitle: string;
+  readonly text: string;
+}
+
+/** The comments above a conversation's input, ready to render. */
+export interface CommentsViewDto {
+  /** Newest first: new blocks stack on top, the oldest sits right above the input. */
+  readonly blocks: readonly CommentBlockDto[];
+  /** Whether they start folded into the header (there are many) until the user unfolds them. */
+  readonly collapsed: boolean;
+  readonly labels: {
+    /** E.g. `3 comments`. */
+    readonly header: string;
+    /** What happens to them, e.g. `Sent with your next message`. */
+    readonly hint: string;
+    readonly edit: string;
+    readonly remove: string;
+    readonly clear: string;
+    readonly expand: string;
+    readonly collapse: string;
+  };
+}
+
+/** What the comment blocks in a webview report to the shell. */
+export type CommentsHostEvent =
+  /** The blocks found their place above the input (or lost it); the shell shows them itself meanwhile. */
+  | { readonly type: 'attached'; readonly attached: boolean }
+  /** `rect`: the block, where the shell opens its editor. */
+  | { readonly type: 'edit'; readonly id: string; readonly rect: RectDto }
+  | { readonly type: 'remove'; readonly id: string }
+  /** The source link was clicked: show the commented text. */
+  | { readonly type: 'reveal'; readonly id: string }
+  | { readonly type: 'clear' };
 
 export interface KeyEventDto {
   readonly key: string;
@@ -513,7 +603,8 @@ export type WebviewToShellMessage =
   | { readonly ccw: string; readonly kind: 'focus' }
   | { readonly ccw: string; readonly kind: 'blur' }
   /** Answer to a `find` control: `active` is 1-based, 0 when there are no matches. */
-  | { readonly ccw: string; readonly kind: 'findResult'; readonly matches: number; readonly active: number };
+  | { readonly ccw: string; readonly kind: 'findResult'; readonly matches: number; readonly active: number }
+  | { readonly ccw: string; readonly kind: 'comments'; readonly event: CommentsHostEvent };
 
 export type FindDirection = 'restart' | 'next' | 'previous';
 
@@ -529,4 +620,6 @@ export type ShellToWebviewControl =
       readonly matchCase: boolean;
       readonly direction: FindDirection;
     }
-  | { readonly ccwControl: 'findStop' };
+  | { readonly ccwControl: 'findStop' }
+  /** The comment blocks to show above the input (pages with `commentsAnchor` only); null: none. */
+  | { readonly ccwControl: 'comments'; readonly view: CommentsViewDto | null };

@@ -17,13 +17,14 @@ export interface ConversationPanel {
   readonly webviewId: string;
   readonly viewType: string;
   title: string;
+  /** Holds the panel's iframe; other modules may add UI below it (it is a column). */
+  readonly container: HTMLElement;
 }
 
 interface PanelEntry extends ConversationPanel {
   readonly tab: HTMLElement;
   readonly label: HTMLElement;
   readonly icon: HTMLImageElement;
-  readonly container: HTMLElement;
   iconPath: IconPathDto | undefined;
 }
 

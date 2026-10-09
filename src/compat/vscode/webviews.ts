@@ -12,7 +12,7 @@ import { Emitter, type Event } from '../../platform/event';
 import { generateId } from '../../platform/ids';
 import type { IDisposable } from '../../platform/lifecycle';
 import type { ILogger } from '../../platform/log';
-import type { IconPathDto, PanelArea } from '../../platform/protocol';
+import type { IconPathDto, PanelArea, WebviewPageHints } from '../../platform/protocol';
 import {
   WEBVIEW_CSP_SOURCE,
   WEBVIEW_ID_PREFIX,
@@ -26,8 +26,13 @@ import { Uri } from './uri';
 
 /** Lets the extension host see messages before the extension does (host/exthost/bridge.ts). */
 export interface WebviewMessageInterceptor {
-  /** Returns true when the message was handled and must not reach the extension. */
+  /**
+   * Returns true when the message was handled and must not reach the extension. It may
+   * also rewrite the message in place and return false to pass it on changed.
+   */
   interceptFromWebview(webview: WebviewImpl, message: unknown): boolean;
+  /** What the shell's script in this webview should know about the page (asked once per webview). */
+  pageHints?(webview: WebviewImpl): WebviewPageHints | undefined;
 }
 
 type IconPath = vscode.Uri | { readonly light: vscode.Uri; readonly dark: vscode.Uri } | ThemeIcon;
@@ -38,6 +43,8 @@ export class WebviewImpl implements vscode.Webview {
   private disposed = false;
   /** Last `setState` from the page; restored into `getState()` when the document reloads. */
   state: unknown = undefined;
+  /** Passed to the shell's script in the page with every document. */
+  pageHints: WebviewPageHints | undefined = undefined;
   private readonly messageEmitter = new Emitter<unknown>();
   readonly onDidReceiveMessage: Event<unknown> = this.messageEmitter.event;
 
@@ -102,6 +109,7 @@ export class WebviewImpl implements vscode.Webview {
       html: this.htmlValue,
       resourceRoots: [...roots, this.extensionPath],
       state: this.state,
+      hints: this.pageHints,
     });
     if (generation === this.generation && !this.disposed) {
       this.backend.load(this.id, webviewDocumentUrl(this.id, generation));
@@ -300,7 +308,7 @@ interface ShowOptions {
 }
 
 /** The chat panel's viewType (anthropic.claude-code 2.1.282): always the conversation area. */
-const CHAT_PANEL_VIEW_TYPE = 'claudeVSCodePanel';
+export const CHAT_PANEL_VIEW_TYPE = 'claudeVSCodePanel';
 
 /**
  * The first editor column is the conversation area; any column beside it is the content
@@ -381,16 +389,8 @@ export class WebviewManager implements IDisposable {
       return false;
     }
     const viewId = generateId('view');
-    const webviewId = generateId(WEBVIEW_ID_PREFIX);
-    const webview = new WebviewImpl(
-      webviewId,
-      viewType,
-      {},
-      this.host.webviews,
-      this.host.extension.path,
-      this.host.logger.child('webview'),
-    );
-    this.webviews.set(webviewId, webview);
+    const webview = this.createWebview(viewType, {});
+    const webviewId = webview.id;
     const view = new WebviewViewImpl(viewId, viewType, webview, this.host.webviews, (disposed) => {
       this.views.delete(disposed.viewType);
       this.webviews.delete(disposed.webview.id);
@@ -414,18 +414,10 @@ export class WebviewManager implements IDisposable {
     options: vscode.WebviewPanelOptions & vscode.WebviewOptions = {},
   ): WebviewPanelImpl {
     const panelId = generateId('panel');
-    const webviewId = generateId(WEBVIEW_ID_PREFIX);
     const preserveFocus = typeof showOptions === 'object' && showOptions.preserveFocus === true;
     const area = panelAreaFor(viewType, showOptions);
-    const webview = new WebviewImpl(
-      webviewId,
-      viewType,
-      options,
-      this.host.webviews,
-      this.host.extension.path,
-      this.host.logger.child('webview'),
-    );
-    this.webviews.set(webviewId, webview);
+    const webview = this.createWebview(viewType, options);
+    const webviewId = webview.id;
     const panel = new WebviewPanelImpl(
       panelId,
       viewType,
@@ -454,6 +446,21 @@ export class WebviewManager implements IDisposable {
       enableFindWidget: options.enableFindWidget === true,
     });
     return panel;
+  }
+
+  private createWebview(viewType: string, options: vscode.WebviewOptions): WebviewImpl {
+    const webview = new WebviewImpl(
+      generateId(WEBVIEW_ID_PREFIX),
+      viewType,
+      options,
+      this.host.webviews,
+      this.host.extension.path,
+      this.host.logger.child('webview'),
+    );
+    // Before the extension sets any html: every document of this webview carries them.
+    webview.pageHints = this.interceptor?.pageHints?.(webview);
+    this.webviews.set(webview.id, webview);
+    return webview;
   }
 
   registerSerializer(viewType: string, serializer: vscode.WebviewPanelSerializer): IDisposable {

@@ -7,11 +7,12 @@
 import { Emitter } from '../../platform/event';
 import { DisposableStore } from '../../platform/lifecycle';
 import type { DocumentSnapshot, RangeDto, RevealType, SelectionDto } from '../../platform/protocol';
-import type { EditorHost, EditorPane } from '../../core/editors';
+import type { EditorHost, EditorPane, EditorSelectionContext } from '../../core/editors';
 import type { ExtensionHostConnection } from '../../core/extensionHost';
 import type { Dialogs } from '../../core/dialogs';
 import { t } from './messages';
 import type { MonacoApi } from './monaco';
+import { MonacoSelectionWidget, monacoSelection, type SelectionMenu } from './selectionMenu';
 import { toMonacoRange, type ModelReference, type TextModels } from './textModels';
 
 type CodeEditor = ReturnType<MonacoApi['editor']['create']>;
@@ -52,6 +53,7 @@ export class TextEditorPane implements EditorPane {
   private readonly editorDisposables = new DisposableStore();
   private banner: HTMLElement;
   private body: HTMLElement;
+  private selectionWidget: MonacoSelectionWidget | undefined;
   private readonly textEditorsEmitter = new Emitter<void>();
   readonly onDidChangeTextEditors = this.textEditorsEmitter.event;
 
@@ -66,6 +68,7 @@ export class TextEditorPane implements EditorPane {
     private readonly label: string,
     /** Monaco options from the settings and the theme's fonts; asked again when the pane moves. */
     private readonly options: () => Record<string, unknown>,
+    private readonly selectionMenu: SelectionMenu,
   ) {
     this.model = models.acquire(data.document);
     const entry = this.model.entry;
@@ -126,7 +129,24 @@ export class TextEditorPane implements EditorPane {
     );
     // (A preview tab is kept once it has unsaved changes: the content pane pins dirty tabs.)
     this.editorDisposables.add(editor.onDidFocusEditorText(() => this.host.activate()));
+    this.selectionWidget = this.editorDisposables.add(
+      new MonacoSelectionWidget(this.monaco, editor, this.selectionMenu, () => monacoSelection(editor, this.data.document)),
+    );
     return editor;
+  }
+
+  selectionContext(): EditorSelectionContext | undefined {
+    return this.selectionWidget?.context();
+  }
+
+  revealSelection(uri: string, range: RangeDto): boolean {
+    if (uri !== this.uri) {
+      return false;
+    }
+    this.setSelections([{ anchor: range.start, active: range.end }]);
+    this.revealRange(range, 'centerIfOutside');
+    this.focus();
+    return true;
   }
 
   get textEditorIds(): readonly string[] {

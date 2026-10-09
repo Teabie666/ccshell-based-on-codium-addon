@@ -8,6 +8,8 @@ import { Emitter, type Event } from '../platform/event';
 import { toDisposable, type IDisposable } from '../platform/lifecycle';
 import type { ILogger } from '../platform/log';
 import type {
+  CommentsHostEvent,
+  CommentsViewDto,
   FindDirection,
   KeyEventDto,
   ShellToWebviewControl,
@@ -143,6 +145,12 @@ export class WebviewFrames {
   readonly onDidCreate: Event<WebviewInfo> = this.createEmitter.event;
   private readonly disposeEmitter = new Emitter<WebviewInfo>();
   readonly onDidDispose: Event<WebviewInfo> = this.disposeEmitter.event;
+  private readonly loadEmitter = new Emitter<WebviewInfo>();
+  /** A webview's document loaded: a new page, which knows nothing the shell told the previous one. */
+  readonly onDidLoad: Event<WebviewInfo> = this.loadEmitter.event;
+  private readonly commentsEmitter = new Emitter<{ webviewId: string; event: CommentsHostEvent }>();
+  /** What the comment blocks in a webview report (see `setComments`). */
+  readonly onDidCommentsEvent = this.commentsEmitter.event;
 
   constructor(
     private readonly connection: ExtensionHostConnection,
@@ -170,6 +178,7 @@ export class WebviewFrames {
     }
     const frame = new WebviewFrame(webviewId, viewType, container, title, () => {
       this.connection.rpc?.notify('webview.didLoad', { webviewId });
+      this.loadEmitter.fire({ webviewId, viewType });
     });
     this.frames.set(webviewId, frame);
     this.createEmitter.fire({ webviewId, viewType });
@@ -234,6 +243,20 @@ export class WebviewFrames {
     }
   }
 
+  /**
+   * The comment blocks a webview shows above its input (pages with a place for them, see
+   * WebviewPageHints). A new document starts without: send them again on `onDidLoad`.
+   */
+  setComments(webviewId: string, view: CommentsViewDto | null): void {
+    const control: ShellToWebviewControl = { ccwControl: 'comments', view };
+    this.frames.get(webviewId)?.post(control);
+  }
+
+  /** The iframe that shows a webview, e.g. to place shell UI over a spot of its page. */
+  element(webviewId: string): HTMLIFrameElement | undefined {
+    return this.frames.get(webviewId)?.iframe;
+  }
+
   private get(webviewId: string): WebviewFrame | undefined {
     const frame = this.frames.get(webviewId);
     if (!frame) {
@@ -274,6 +297,11 @@ export class WebviewFrames {
         break;
       case 'findResult':
         this.findEmitter.fire({ webviewId, matches: data.matches ?? 0, active: data.active ?? 0 });
+        break;
+      case 'comments':
+        if (data.event) {
+          this.commentsEmitter.fire({ webviewId, event: data.event });
+        }
         break;
       case 'focus':
       case 'blur':

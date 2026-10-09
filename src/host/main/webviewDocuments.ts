@@ -43,6 +43,7 @@ export class WebviewDocumentStore {
       webviewId,
       state: document.state,
       theme: this.getTheme(),
+      hints: document.hints,
     };
     return injectBootstrap(allowInlineFonts(document.html), this.bootstrapSource, data);
   }

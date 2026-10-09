@@ -2,6 +2,7 @@ import { describe, test } from 'node:test';
 import assert from 'node:assert/strict';
 
 import { ClaudeWebviewBridge, describeShape } from '../../../src/host/exthost/bridge';
+import { CommentStore } from '../../../src/host/exthost/comments';
 import { NullLogger } from '../../../src/platform/log';
 import type { WebviewImpl } from '../../../src/compat/vscode/webviews';
 import type { OsBackend } from '../../../src/compat/vscode/host';
@@ -35,6 +36,8 @@ function makeBridge(diffEditorAvailable: boolean) {
   const { os, opened } = makeOs();
   const bridge = new ClaudeWebviewBridge(os, NullLogger, {
     diffEditorAvailable: () => diffEditorAvailable,
+    comments: new CommentStore(),
+    workspaceFolders: [],
   });
   return { bridge, webview, messages, opened };
 }

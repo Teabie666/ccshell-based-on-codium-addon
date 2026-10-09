@@ -1,7 +1,8 @@
 /**
  * Reopens the conversation panels that were open when vilaus last closed, the way VS Code
  * restores webview panels: each panel's last webview state (which carries its session id)
- * is saved, and on start the extension's own WebviewPanelSerializer revives it.
+ * is saved, and on start the extension's own WebviewPanelSerializer revives it. A panel's
+ * comments not sent yet come back with it.
  */
 
 import type * as vscode from 'vscode';
@@ -10,6 +11,8 @@ import type { WebviewManager } from '../../compat/vscode/webviews';
 import { ViewColumn } from '../../compat/vscode/types';
 import type { IDisposable } from '../../platform/lifecycle';
 import type { ILogger } from '../../platform/log';
+import type { CommentDto } from '../../platform/protocol';
+import { sanitizeComments, type CommentStore } from './comments';
 
 const STORAGE_KEY = 'vilaus.openPanels';
 const SAVE_DELAY_MS = 500;
@@ -19,19 +22,24 @@ interface PanelRecord {
   readonly title: string;
   readonly state: unknown;
   readonly active: boolean;
+  readonly comments?: readonly CommentDto[];
 }
 
 export class PanelRestore implements IDisposable {
   private timer: NodeJS.Timeout | undefined;
   private frozen = false;
-  private readonly subscription: IDisposable;
+  private readonly subscriptions: IDisposable[];
 
   constructor(
     private readonly webviews: WebviewManager,
     private readonly storage: StorageBackend,
+    private readonly comments: CommentStore,
     private readonly logger: ILogger,
   ) {
-    this.subscription = webviews.onDidChangePanels(() => this.scheduleSave());
+    this.subscriptions = [
+      webviews.onDidChangePanels(() => this.scheduleSave()),
+      comments.onDidChange(() => this.scheduleSave()),
+    ];
   }
 
   /**
@@ -58,6 +66,7 @@ export class PanelRestore implements IDisposable {
       panel.webview.state = record.state;
       try {
         await serializer.deserializeWebviewPanel(panel, record.state);
+        this.comments.set(panel.webview.id, sanitizeComments(record.comments));
         restored++;
         if (record.active) {
           active = panel;
@@ -81,7 +90,7 @@ export class PanelRestore implements IDisposable {
 
   dispose(): void {
     clearTimeout(this.timer);
-    this.subscription.dispose();
+    this.subscriptions.forEach((subscription) => subscription.dispose());
   }
 
   private scheduleSave(): void {
@@ -96,12 +105,16 @@ export class PanelRestore implements IDisposable {
     if (this.frozen) {
       return;
     }
-    const records: PanelRecord[] = this.webviews.allPanels.map((panel) => ({
-      viewType: panel.viewType,
-      title: panel.title,
-      state: panel.webview.state,
-      active: panel.active,
-    }));
+    const records: PanelRecord[] = this.webviews.allPanels.map((panel) => {
+      const comments = this.comments.list(panel.webview.id);
+      return {
+        viewType: panel.viewType,
+        title: panel.title,
+        state: panel.webview.state,
+        active: panel.active,
+        ...(comments.length > 0 ? { comments } : {}),
+      };
+    });
     this.storage.set('workspace', STORAGE_KEY, records);
   }
 }

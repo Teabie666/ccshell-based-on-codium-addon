@@ -14,6 +14,11 @@ import { evaluateWhen, type ContextKeyService } from './contextKeys';
 export const MenuId = {
   /** Right-click inside a webview. The `webviewId` context key holds the webview's viewType. */
   WebviewContext: 'webview/context',
+  /**
+   * Buttons that float next to text the user selected in a content pane editor (Vilausity's
+   * own menu). Their command gets an `EditorSelectionContext` (core/editors.ts).
+   */
+  EditorSelection: 'editor/selection',
 } as const;
 
 export interface MenuItem {
@@ -22,6 +27,8 @@ export interface MenuItem {
   readonly when?: string;
   readonly group?: string;
   readonly order?: number;
+  /** An icon name for menus that show icons (e.g. `comment`): the shell's `icon-<name>` style. */
+  readonly icon?: string;
 }
 
 export class MenuService {

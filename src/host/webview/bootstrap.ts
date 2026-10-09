@@ -12,6 +12,7 @@ import type {
   WebviewBootstrapData,
   WebviewToShellMessage,
 } from '../../platform/protocol';
+import { CommentsHost } from './comments';
 import { DEFAULT_WEBVIEW_STYLES } from './defaultStyles';
 import { InPageFinder } from './find';
 
@@ -76,6 +77,9 @@ const THEME_CLASSES = [
   window.acquireVsCodeApi = () => api;
 
   const finder = new InPageFinder((matches, active) => post({ kind: 'findResult', matches, active }));
+  // Pages that have a place for comment blocks (a conversation's input) say where it is.
+  const anchor = data.hints?.commentsAnchor;
+  const comments = anchor ? new CommentsHost(anchor, (event) => post({ kind: 'comments', event })) : undefined;
 
   // Control messages from the shell are consumed here and never reach the extension.
   window.addEventListener(
@@ -98,6 +102,11 @@ const THEME_CLASSES = [
         case 'findStop':
           finder.stop();
           break;
+        case 'comments': {
+          const view = control.view;
+          onDomReady(() => comments?.update(view));
+          break;
+        }
       }
     },
     true,

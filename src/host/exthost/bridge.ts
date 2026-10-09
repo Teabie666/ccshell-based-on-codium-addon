@@ -9,12 +9,15 @@
  *                         { type: 'io_message', channelId, message, done }   (user input)
  *   extension -> webview  { type: 'from-extension', message: { type: 'response', requestId, response } }
  *
- * Keep this the only place outside compat/ that knows about those shapes.
+ * Keep this the only place outside compat/ that knows about those shapes, and about the
+ * extension's pages (the selectors in the page hints).
  */
 
-import type { WebviewImpl, WebviewMessageInterceptor } from '../../compat/vscode/webviews';
+import { CHAT_PANEL_VIEW_TYPE, type WebviewImpl, type WebviewMessageInterceptor } from '../../compat/vscode/webviews';
 import type { OsBackend } from '../../compat/vscode/host';
 import type { ILogger } from '../../platform/log';
+import type { WebviewPageHints } from '../../platform/protocol';
+import { formatComments, type CommentStore } from './comments';
 
 interface WebviewRequest {
   readonly type: 'request';
@@ -23,12 +26,24 @@ interface WebviewRequest {
   readonly request: { readonly type: string; readonly [key: string]: unknown };
 }
 
+/**
+ * The conversation's message input and the form around it (anthropic.claude-code 2.1.282:
+ * `form > fieldset > div > div[role=textbox][aria-label="Message input"]`, inside a
+ * bottom-anchored container whose height the page measures to keep the last message above
+ * it). Comment blocks go right before the form, so the page makes room for them too.
+ */
+const CHAT_INPUT_FORM = 'form:has([role="textbox"][aria-label="Message input"])';
+
 export interface BridgeOptions {
   /**
    * Whether vilaus can show diff editors. Until M2 it cannot, and the webview must
    * then not wait on `open_diff`, or it auto-rejects every edit (see below).
    */
   readonly diffEditorAvailable: () => boolean;
+  /** Comments waiting for their conversation's next message. */
+  readonly comments: CommentStore;
+  /** For the paths in comments: relative to the workspace when inside it. */
+  readonly workspaceFolders: readonly string[];
 }
 
 export class ClaudeWebviewBridge implements WebviewMessageInterceptor {
@@ -51,6 +66,7 @@ export class ClaudeWebviewBridge implements WebviewMessageInterceptor {
     }
     if (message.type === 'io_message') {
       this.logInputShapeOnce(message);
+      this.attachComments(webview, message);
       return false;
     }
     if (!isWebviewRequest(message)) {
@@ -115,6 +131,42 @@ export class ClaudeWebviewBridge implements WebviewMessageInterceptor {
     void this.os.openExternal(url).catch((error: unknown) => this.logger.warn(`open_url failed: ${url}`, error));
     respond(webview, message.requestId, { type: 'open_url_response' });
     return true;
+  }
+
+  pageHints(webview: WebviewImpl): WebviewPageHints | undefined {
+    return webview.viewType === CHAT_PANEL_VIEW_TYPE ? { commentsAnchor: CHAT_INPUT_FORM } : undefined;
+  }
+
+  /**
+   * A user message takes its conversation's comments along, as one more text block after
+   * what the user typed; the typed text itself is left alone. In 2.1.282 an `io_message`
+   * carries `{type: "user", message: {role: "user", content: [...]}}`, and the typed text
+   * is the last text block (context such as the editor selection comes first). Slash
+   * commands (`/compact`...) go out the same way; they leave the comments for the next message.
+   */
+  private attachComments(webview: WebviewImpl, message: Record<string, unknown>): void {
+    const store = this.options.comments;
+    if (store.list(webview.id).length === 0) {
+      return;
+    }
+    const user = message.message;
+    if (!isRecord(user) || user.type !== 'user' || !isRecord(user.message)) {
+      return;
+    }
+    const inner = user.message;
+    const content: unknown[] | undefined =
+      typeof inner.content === 'string' ? [{ type: 'text', text: inner.content }] : Array.isArray(inner.content) ? inner.content : undefined;
+    if (!content) {
+      this.logger.warn(`io_message content is ${describeShape(inner.content)}; comments not attached`);
+      return;
+    }
+    const typed = content.findLast((block) => isRecord(block) && block.type === 'text' && typeof block.text === 'string');
+    if (isRecord(typed) && String(typed.text).trimStart().startsWith('/')) {
+      return;
+    }
+    const comments = store.take(webview.id);
+    inner.content = [...content, { type: 'text', text: formatComments(comments, this.options.workspaceFolders) }];
+    this.logger.info(`attached ${comments.length} comment(s) to a message`);
   }
 
   /** Records the structure (never the content) of the first user message, for the comments feature (M3). */

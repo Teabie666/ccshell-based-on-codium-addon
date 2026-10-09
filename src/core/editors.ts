@@ -8,6 +8,30 @@
 
 import type { Event } from '../platform/event';
 import type { IDisposable } from '../platform/lifecycle';
+import type { RangeDto } from '../platform/protocol';
+
+/** Text the user selected in an editor. */
+export interface EditorTextSelection {
+  readonly text: string;
+  /** The document it is in (`vscode.Uri.toString()`), and the file's path for labels. */
+  readonly uri: string;
+  readonly path: string;
+  /** Where in the document; from a rendered view (Markdown preview), the lines it came from. */
+  readonly range: RangeDto;
+}
+
+/**
+ * What commands of the `editor/selection` menu get (MenuId.EditorSelection): the selection,
+ * and a way to show UI of their own next to it.
+ */
+export interface EditorSelectionContext {
+  readonly selection: EditorTextSelection;
+  /**
+   * Shows `element` next to the selection in place of the menu's buttons, moving with the
+   * text; it goes away when disposed, or when the editor closes.
+   */
+  showWidget(element: HTMLElement): IDisposable;
+}
 
 export interface EditorInput {
   /** Identity: opening an input whose id is already open activates that tab. */
@@ -50,6 +74,17 @@ export interface EditorPane extends IDisposable {
   /** Ids of the text editors this pane shows, the input-taking one first (for `visibleTextEditors`). */
   readonly textEditorIds?: readonly string[];
   readonly onDidChangeTextEditors?: Event<void>;
+  /**
+   * The text selected in this pane now, for `editor/selection` commands run from a
+   * keybinding; undefined when nothing is selected. Panes with it show the menu by selections.
+   */
+  selectionContext?(): EditorSelectionContext | undefined;
+  /**
+   * Selects `range` of document `uri` if this pane shows it, and scrolls it into view.
+   * `text` is what was selected there, for views without lines (a rendered preview).
+   * Returns false when the pane does not show that document.
+   */
+  revealSelection?(uri: string, range: RangeDto, text: string): boolean;
 }
 
 export interface EditorProvider {

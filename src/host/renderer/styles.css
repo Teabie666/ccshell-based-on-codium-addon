@@ -19,6 +19,11 @@
   --icon-pop-out: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M1.5 1H6v1H2v12h12v-4h1v4.5l-.5.5h-13l-.5-.5v-13l.5-.5z'/%3E%3Cpath d='M15 1.5V8h-1V2.707L7.243 9.465l-.707-.708L13.293 2H8V1h6.5l.5.5z'/%3E%3C/svg%3E");
   --icon-arrow-up: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M8 3.5l4.854 4.854-.708.707L8.5 5.414V13h-1V5.414L3.854 9.06l-.708-.707L8 3.5z'/%3E%3C/svg%3E");
   --icon-arrow-down: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M8 12.5L3.146 7.646l.708-.707L7.5 10.586V3h1v7.586l3.646-3.647.708.707L8 12.5z'/%3E%3C/svg%3E");
+  --icon-comment: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M1 4.5C1 3.11929 2.11929 2 3.5 2H12.5C13.8807 2 15 3.11929 15 4.5V9.5C15 10.8807 13.8807 12 12.5 12H8.68787L5.62533 14.6797C4.99168 15.2342 4 14.7842 4 13.9422V12H3.5C2.11929 12 1 10.8807 1 9.5V4.5ZM3.5 3C2.67157 3 2 3.67157 2 4.5V9.5C2 10.3284 2.67157 11 3.5 11H5V13.8981L8.31213 11H12.5C13.3284 11 14 10.3284 14 9.5V4.5C14 3.67157 13.3284 3 12.5 3H3.5Z'/%3E%3C/svg%3E");
+  --icon-edit: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M14.236 1.76386C13.2123 0.740172 11.5525 0.740171 10.5289 1.76386L2.65722 9.63549C2.28304 10.0097 2.01623 10.4775 1.88467 10.99L1.01571 14.3755C0.971767 14.5467 1.02148 14.7284 1.14646 14.8534C1.27144 14.9783 1.45312 15.028 1.62432 14.9841L5.00978 14.1151C5.52234 13.9836 5.99015 13.7168 6.36433 13.3426L14.236 5.47097C15.2596 4.44728 15.2596 2.78755 14.236 1.76386ZM11.236 2.47097C11.8691 1.8378 12.8957 1.8378 13.5288 2.47097C14.162 3.10413 14.162 4.1307 13.5288 4.76386L12.75 5.54269L10.4571 3.24979L11.236 2.47097ZM9.75002 3.9569L12.0429 6.24979L5.65722 12.6355C5.40969 12.883 5.10023 13.0595 4.76117 13.1465L2.19447 13.8053L2.85327 11.2386C2.9403 10.8996 3.1168 10.5901 3.36433 10.3426L9.75002 3.9569Z'/%3E%3C/svg%3E");
+  --icon-trash: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M14 2H10C10 0.897 9.103 0 8 0C6.897 0 6 0.897 6 2H2C1.724 2 1.5 2.224 1.5 2.5C1.5 2.776 1.724 3 2 3H2.54L3.349 12.708C3.456 13.994 4.55 15 5.84 15H10.159C11.449 15 12.543 13.993 12.65 12.708L13.459 3H13.999C14.275 3 14.499 2.776 14.499 2.5C14.499 2.224 14.275 2 13.999 2H14ZM8 1C8.551 1 9 1.449 9 2H7C7 1.449 7.449 1 8 1ZM11.655 12.625C11.591 13.396 10.934 14 10.16 14H5.841C5.067 14 4.41 13.396 4.346 12.625L3.544 3H12.458L11.656 12.625H11.655ZM7 5.5V11.5C7 11.776 6.776 12 6.5 12C6.224 12 6 11.776 6 11.5V5.5C6 5.224 6.224 5 6.5 5C6.776 5 7 5.224 7 5.5ZM10 5.5V11.5C10 11.776 9.776 12 9.5 12C9.224 12 9 11.776 9 11.5V5.5C9 5.224 9.224 5 9.5 5C9.776 5 10 5.224 10 5.5Z'/%3E%3C/svg%3E");
+  --icon-chevron-down: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M3.14598 5.85423L7.64598 10.3542C7.84098 10.5492 8.15798 10.5492 8.35298 10.3542L12.853 5.85423C13.048 5.65923 13.048 5.34223 12.853 5.14723C12.658 4.95223 12.341 4.95223 12.146 5.14723L7.99998 9.29323L3.85398 5.14723C3.65898 4.95223 3.34198 4.95223 3.14698 5.14723C2.95198 5.34223 2.95098 5.65923 3.14598 5.85423Z'/%3E%3C/svg%3E");
+  --icon-chevron-right: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M6.14601 3.14579C5.95101 3.34079 5.95101 3.65779 6.14601 3.85279L10.292 7.99879L6.14601 12.1448C5.95101 12.3398 5.95101 12.6568 6.14601 12.8518C6.34101 13.0468 6.65801 13.0468 6.85301 12.8518L11.353 8.35179C11.548 8.15679 11.548 7.83979 11.353 7.64478L6.85301 3.14479C6.65801 2.94979 6.34101 2.95079 6.14601 3.14579Z'/%3E%3C/svg%3E");
   --icon-case: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M7.495 9.052L8.386 11.402H9.477L6.237 3H5.217L2 11.402H3.095L3.933 9.052H7.495ZM5.811 4.453L5.855 4.588L7.173 8.162H4.255L5.562 4.588L5.606 4.453L5.644 4.297L5.676 4.145L5.697 4.019H5.72L5.744 4.145L5.773 4.297L5.811 4.453ZM13.795 10.464V11.4H14.755V7.498C14.755 6.779 14.575 6.226 14.216 5.837C13.857 5.448 13.327 5.254 12.628 5.254C12.429 5.254 12.227 5.273 12.022 5.31C11.817 5.347 11.622 5.395 11.437 5.455C11.252 5.515 11.083 5.579 10.93 5.648C10.777 5.717 10.656 5.784 10.567 5.85V6.86C10.788 6.668 11.042 6.517 11.329 6.405C11.616 6.293 11.913 6.237 12.22 6.237C12.374 6.237 12.517 6.262 12.649 6.313C12.781 6.364 12.894 6.443 12.988 6.551C13.082 6.659 13.155 6.8 13.207 6.973C13.259 7.146 13.285 7.355 13.285 7.6L11.637 7.825C11.36 7.862 11.106 7.932 10.875 8.034C10.644 8.136 10.444 8.267 10.275 8.427C10.106 8.587 9.976 8.776 9.884 8.995C9.792 9.214 9.746 9.459 9.746 9.73C9.746 9.956 9.783 10.167 9.857 10.363C9.931 10.559 10.04 10.729 10.183 10.873C10.326 11.017 10.502 11.13 10.711 11.212C10.92 11.294 11.159 11.335 11.428 11.335C11.794 11.335 12.131 11.245 12.439 11.065C12.747 10.885 13.017 10.651 13.249 10.364H13.271L13.795 10.464ZM13.285 8.528V8.903C13.285 9.13 13.247 9.339 13.171 9.531C13.095 9.723 12.99 9.889 12.857 10.03C12.724 10.171 12.567 10.281 12.386 10.36C12.205 10.439 12.009 10.479 11.798 10.479C11.651 10.479 11.519 10.459 11.402 10.418C11.285 10.377 11.187 10.32 11.106 10.246C11.025 10.172 10.963 10.083 10.92 9.98C10.877 9.877 10.856 9.763 10.856 9.638C10.856 9.484 10.881 9.349 10.932 9.233C10.983 9.117 11.058 9.019 11.157 8.939C11.256 8.859 11.38 8.795 11.528 8.745C11.676 8.695 11.849 8.656 12.047 8.629L13.285 8.528Z'/%3E%3C/svg%3E");
 }
 
@@ -293,6 +298,8 @@ body.resizing {
 .panel {
   position: absolute;
   inset: 0;
+  display: flex;
+  flex-direction: column;
 }
 
 .webview-frame {
@@ -301,6 +308,13 @@ body.resizing {
   height: 100%;
   border: 0;
   background: transparent;
+}
+
+/* A conversation's page, with room below it for shell UI (the comments bar). */
+.panel > .webview-frame {
+  flex: 1 1 auto;
+  height: auto;
+  min-height: 0;
 }
 
 /* ---- content pane: editor tabs and editors --------------------------------- */
@@ -347,6 +361,18 @@ body.resizing {
 
 .icon-discard {
   --icon: var(--icon-discard);
+}
+
+.icon-comment {
+  --icon: var(--icon-comment);
+}
+
+.icon-edit {
+  --icon: var(--icon-edit);
+}
+
+.icon-trash {
+  --icon: var(--icon-trash);
 }
 
 /* The same arrow, pointing back in. */
@@ -909,6 +935,266 @@ body.resizing {
   font-size: 12px;
   white-space: nowrap;
   color: var(--vscode-descriptionForeground);
+}
+
+/* ---- selection menu: buttons next to selected text (editor/selection) ------- */
+
+.selection-widget {
+  z-index: 40;
+}
+
+/* In the Markdown preview the widgets scroll with the text. */
+.preview-selection-widget {
+  position: absolute;
+}
+
+.selection-toolbar {
+  display: flex;
+  gap: 1px;
+  box-shadow: 0 0 8px 2px var(--vscode-widget-shadow);
+  user-select: none;
+}
+
+.selection-toolbar-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 22px;
+  padding: 0 8px 0 6px;
+  border: 1px solid var(--vscode-button-border, transparent);
+  background: var(--vscode-button-background);
+  color: var(--vscode-button-foreground);
+  font-family: var(--vscode-font-family);
+  font-size: 12px;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.selection-toolbar-button:hover {
+  background: var(--vscode-button-hoverBackground);
+}
+
+.selection-toolbar-separator {
+  width: 1px;
+  background: var(--vscode-widget-border, transparent);
+}
+
+.selection-toolbar-icon::before {
+  content: '';
+  display: block;
+  width: 14px;
+  height: 14px;
+  background-color: currentColor;
+  mask: var(--icon) center / 14px no-repeat;
+}
+
+/* ---- comments: the form, and the bar below a conversation ------------------- */
+
+.comment-form {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  width: 360px;
+  max-width: calc(100vw - 16px);
+  padding: 8px;
+  background: var(--vscode-editorWidget-background);
+  color: var(--vscode-editorWidget-foreground, var(--vscode-foreground));
+  border: 1px solid var(--vscode-editorWidget-border, var(--vscode-widget-border, transparent));
+  box-shadow: 0 0 8px 2px var(--vscode-widget-shadow);
+  font-family: var(--vscode-font-family);
+  font-size: var(--vscode-font-size, 13px);
+  user-select: text;
+}
+
+/* Edited over its block: as wide as the block. */
+.comment-form-overlay {
+  position: absolute;
+}
+
+.comment-form-overlay .comment-form {
+  width: 100%;
+}
+
+.comment-form-quote {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 1px 6px;
+  border-left: 2px solid var(--vscode-textBlockQuote-border, var(--vscode-descriptionForeground));
+  font-size: 12px;
+  color: var(--vscode-descriptionForeground);
+}
+
+.comment-form-quote-text {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.comment-form-source {
+  flex: none;
+  white-space: nowrap;
+  color: var(--vscode-textLink-foreground);
+}
+
+.comment-form-input {
+  width: 100%;
+  min-height: 56px;
+  max-height: 240px;
+  padding: 4px 6px;
+  font: inherit;
+  color: var(--vscode-input-foreground);
+  background: var(--vscode-input-background);
+  border: 1px solid var(--vscode-input-border, transparent);
+  outline: none;
+  resize: vertical;
+}
+
+.comment-form-input:focus {
+  border-color: var(--vscode-focusBorder);
+}
+
+.comment-form-input::placeholder {
+  color: var(--vscode-input-placeholderForeground);
+}
+
+.comment-form-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 6px;
+}
+
+.comment-form-actions .button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+/* Shown by the shell when the blocks cannot sit above the conversation's input. */
+.comments-bar {
+  flex: none;
+  max-height: 40%;
+  overflow-y: auto;
+  padding: 2px 8px 6px;
+  border-top: 1px solid var(--vscode-panel-border, var(--vscode-widget-border, transparent));
+  background: var(--vscode-sideBar-background, var(--vscode-editor-background));
+  user-select: text;
+}
+
+.comments-bar-header {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  height: 24px;
+  color: var(--vscode-descriptionForeground);
+}
+
+.comments-bar-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  height: 22px;
+  padding: 0 4px 0 0;
+  border: 1px solid transparent;
+  background: none;
+  color: var(--vscode-foreground);
+  cursor: pointer;
+}
+
+.comments-bar-toggle::before {
+  content: '';
+  width: 16px;
+  height: 16px;
+  background-color: currentColor;
+  mask: var(--icon-chevron-down) center / 16px no-repeat;
+}
+
+.comments-bar-toggle.collapsed::before {
+  mask-image: var(--icon-chevron-right);
+}
+
+.comments-bar-toggle:hover {
+  background: var(--vscode-toolbar-hoverBackground);
+}
+
+.comments-bar-hint::before {
+  content: '·';
+  margin-right: 6px;
+}
+
+.comments-bar-hint {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.comments-bar-list {
+  border: 1px solid var(--vscode-editorWidget-border, var(--vscode-widget-border, transparent));
+  background: var(--vscode-editorWidget-background);
+}
+
+.comments-bar-item {
+  padding: 3px 4px 4px 8px;
+}
+
+.comments-bar-item + .comments-bar-item {
+  border-top: 1px solid var(--vscode-editorWidget-border, var(--vscode-widget-border, transparent));
+}
+
+.comments-bar-item-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 22px;
+}
+
+.comments-bar-quote {
+  flex: 1 1 auto;
+  min-width: 0;
+  padding-left: 6px;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  border-left: 2px solid var(--vscode-textBlockQuote-border, var(--vscode-descriptionForeground));
+  color: var(--vscode-descriptionForeground);
+}
+
+.comments-bar-source {
+  flex: none;
+  padding: 0;
+  border: none;
+  background: none;
+  white-space: nowrap;
+  color: var(--vscode-textLink-foreground);
+  cursor: pointer;
+}
+
+.comments-bar-source:hover {
+  color: var(--vscode-textLink-activeForeground);
+  text-decoration: underline;
+}
+
+.comments-bar-item .icon-button {
+  width: 20px;
+  height: 20px;
+  visibility: hidden;
+}
+
+.comments-bar-item:hover .icon-button,
+.comments-bar-item:focus-within .icon-button {
+  visibility: visible;
+}
+
+.comments-bar-text {
+  padding: 1px 0 0 8px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
 }
 
 /* ---- buttons --------------------------------------------------------------- */

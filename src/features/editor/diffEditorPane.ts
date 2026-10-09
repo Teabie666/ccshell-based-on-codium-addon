@@ -5,14 +5,15 @@
  */
 
 import { DisposableStore } from '../../platform/lifecycle';
-import type { DiffActionDto, DocumentSnapshot } from '../../platform/protocol';
+import type { DiffActionDto, DocumentSnapshot, RangeDto } from '../../platform/protocol';
 import type { Dialogs } from '../../core/dialogs';
-import type { EditorHost, EditorPane } from '../../core/editors';
+import type { EditorHost, EditorPane, EditorSelectionContext } from '../../core/editors';
 import type { ExtensionHostConnection } from '../../core/extensionHost';
 import { t } from './messages';
 import type { MonacoApi } from './monaco';
+import { MonacoSelectionWidget, monacoSelection, type SelectionMenu } from './selectionMenu';
 import { selectionToDto } from './textEditorPane';
-import type { ModelReference, TextModels } from './textModels';
+import { toMonacoRange, type ModelReference, type TextModels } from './textModels';
 
 type DiffEditor = ReturnType<MonacoApi['editor']['createDiffEditor']>;
 
@@ -34,6 +35,8 @@ export class DiffEditorPane implements EditorPane {
   private readonly editorDisposables = new DisposableStore();
   private toolbar: HTMLElement | undefined;
   private body: HTMLElement;
+  /** Both sides offer the selection menu: comments on the proposal or on the original. */
+  private selectionWidgets: { modified: MonacoSelectionWidget; original: MonacoSelectionWidget } | undefined;
 
   constructor(
     private readonly monaco: MonacoApi,
@@ -45,6 +48,7 @@ export class DiffEditorPane implements EditorPane {
     private readonly dialogs: Dialogs,
     private readonly label: string,
     private readonly options: () => Record<string, unknown>,
+    private readonly selectionMenu: SelectionMenu,
   ) {
     this.original = models.acquire(data.original);
     this.modified = models.acquire(data.modified);
@@ -102,8 +106,36 @@ export class DiffEditorPane implements EditorPane {
       }),
     );
     this.editorDisposables.add(modifiedEditor.onDidFocusEditorText(() => this.host.activate()));
-    this.editorDisposables.add(editor.getOriginalEditor().onDidFocusEditorText(() => this.host.activate()));
+    const originalEditor = editor.getOriginalEditor();
+    this.editorDisposables.add(originalEditor.onDidFocusEditorText(() => this.host.activate()));
+    const widget = (side: typeof modifiedEditor, document: DocumentSnapshot): MonacoSelectionWidget =>
+      this.editorDisposables.add(new MonacoSelectionWidget(this.monaco, side, this.selectionMenu, () => monacoSelection(side, document)));
+    this.selectionWidgets = {
+      modified: widget(modifiedEditor, this.data.modified),
+      original: widget(originalEditor, this.data.original),
+    };
     return editor;
+  }
+
+  selectionContext(): EditorSelectionContext | undefined {
+    const widgets = this.selectionWidgets;
+    if (!widgets) {
+      return undefined;
+    }
+    return this.editor.getOriginalEditor().hasTextFocus() ? widgets.original.context() : widgets.modified.context();
+  }
+
+  revealSelection(uri: string, range: RangeDto): boolean {
+    const side =
+      uri === this.data.modified.uri ? this.editor.getModifiedEditor() : uri === this.data.original.uri ? this.editor.getOriginalEditor() : undefined;
+    if (!side) {
+      return false;
+    }
+    const target = toMonacoRange(range);
+    side.setSelection(target);
+    side.revealRangeInCenterIfOutsideViewport(target);
+    side.focus();
+    return true;
   }
 
   /** The modified side takes input; both sides count as visible, like VS Code's diff editor. */

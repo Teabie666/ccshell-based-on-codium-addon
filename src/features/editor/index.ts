@@ -17,6 +17,7 @@ import {
   IExtensionHost,
   IKeybindings,
   ILayout,
+  IMenus,
   ISettings,
   IThemes,
 } from '../../core/serviceIds';
@@ -34,6 +35,7 @@ import { DiffEditorPane, type DiffInputData } from './diffEditorPane';
 import { Highlighting } from './highlighting';
 import { t } from './messages';
 import { loadMonaco, type JsonLanguage, type MonacoApi } from './monaco';
+import { SelectionMenu } from './selectionMenu';
 import { TextEditorPane, editorFontOptions, type TextInputData } from './textEditorPane';
 import { basename, shortDiffTitle } from './titles';
 import { TextModels, type TextModel } from './textModels';
@@ -94,6 +96,8 @@ export class TextEditorService {
     private readonly themes: ThemeService,
     private readonly dialogs: Dialogs,
     private readonly settings: SettingsService,
+    /** The `editor/selection` menu, shown next to selections in every editor. */
+    readonly selectionMenu: SelectionMenu,
     private readonly logger: ILogger,
   ) {}
 
@@ -313,6 +317,7 @@ export class TextEditorService {
       this.dialogs,
       input.label,
       this.diffOptions,
+      this.selectionMenu,
     );
     this.diffPanes.add(pane);
     const dispose = pane.dispose.bind(pane);
@@ -359,6 +364,7 @@ export class TextEditorService {
       this.dialogs,
       input.label,
       this.textOptions,
+      this.selectionMenu,
     );
     this.panes.set(data.editorId, pane);
     const dispose = pane.dispose.bind(pane);
@@ -483,7 +489,8 @@ export const editorModule: ShellModule = {
     const themes = services.get(IThemes);
 
     const settings = services.get(ISettings);
-    const editors = new TextEditorService(connection, contentPane, themes, services.get(IDialogs), settings, logger);
+    const selectionMenu = new SelectionMenu(services.get(IMenus), commands, logger.child('selection'));
+    const editors = new TextEditorService(connection, contentPane, themes, services.get(IDialogs), settings, selectionMenu, logger);
     subscriptions.add(settings.register(editorSettingDefinitions()));
     subscriptions.add(
       settings.onDidChange((keys) => {

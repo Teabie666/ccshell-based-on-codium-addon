@@ -16,6 +16,7 @@ import { toDisposable } from '../../platform/lifecycle';
 import type { ILogger } from '../../platform/log';
 import type { ExtHostInitData } from '../../platform/protocol';
 import { ClaudeWebviewBridge } from './bridge';
+import { CommentStore, registerCommentRequests } from './comments';
 import { PanelRestore } from './panelRestore';
 import { createCompatHost, type CompatHostHandle, type MainRpc, type RendererRpc } from './compatHost';
 import { readContributions } from './contributions';
@@ -102,10 +103,18 @@ export class ExtensionHost {
     this.services = services;
     registerWorkbenchCommands(services.commands);
     registerEditorRequests(renderer, services, init.workspaceFolders, this.logger.child('editors'));
-    this.panelRestore = new PanelRestore(services.webviews, compat.host.storage, this.logger.child('restore'));
+    const comments = new CommentStore();
+    const webviews = services.webviews;
+    const isConversation = (webviewId: string): boolean => webviews.allPanels.some((panel) => panel.webview.id === webviewId);
+    registerCommentRequests(renderer, comments, isConversation, this.logger.child('comments'));
+    // A closed conversation's comments go with it.
+    webviews.onDidChangePanels(() => comments.retain(new Set(webviews.allPanels.map((panel) => panel.webview.id))));
+    this.panelRestore = new PanelRestore(webviews, compat.host.storage, comments, this.logger.child('restore'));
     // The content pane shows `vscode.diff` (ADR 0002 held open_diff before it existed).
-    services.webviews.interceptor = new ClaudeWebviewBridge(compat.host.os, this.logger.child('bridge'), {
+    webviews.interceptor = new ClaudeWebviewBridge(compat.host.os, this.logger.child('bridge'), {
       diffEditorAvailable: () => true,
+      comments,
+      workspaceFolders: init.workspaceFolders,
     });
     installVSCodeModule(api);
 
