@@ -6,11 +6,11 @@
 
 ## 下一步
 
-1. M2 收尾：真实会话验证 diff 审批和计划预览、smoke 改 API 模式、标签页弹出成独立窗口、中文译文，然后试用
+1. 试用 M2 最后加的部分，根据反馈调整后开始 M3 评论
 
 每个阶段结束都要做：typecheck、`npm test`、`node tests/ui.mjs`（动了 bridge / compat 再跑 `npm run smoke`）；看最新一次的 `shim-unimplemented.log`；确认没往 `C:\Program Files\VSCodium` 写任何东西、git 里没有密钥；用屏幕工具截图，跟 VSCodium 里的同一界面对比；用 `run-dev.cmd` 试用。
 
-测试现状（2026-10-09）：单元 129/129，语言包 0 条缺译，界面 22/22，smoke 11/11（M2 后，用 Anthropic 兼容接口跑的）。
+测试现状（2026-10-09）：单元 129/129，语言包 0 条缺译，界面 24/24，smoke 11/11（M2 后，用 Anthropic 兼容接口跑的）。
 
 ## M0 技术验证：完成（2026-10-08）
 
@@ -58,7 +58,7 @@
 - [x] 测试：nls 的单元测试；界面测试固定英文跑，最后在命令面板里切到中文、重启，检查命令面板和右键菜单
 - [x] 试用（2026-10-09）。试用后的改动：代码里只写英文，中文移进单独的语言包 `src/nls/zh-cn.json`，译文可以晚点批量补；`npm run nls` 检查缺的和过时的条目
 
-## M2 内容面板 + Monaco：进行中（2026-10-09 开始）
+## M2 内容面板 + Monaco：完成（2026-10-09）
 
 依赖：`monaco-editor` 0.57、`shiki` 4.5（没用 `@shikijs/monaco`：它的类型依赖没装的 `monaco-editor-core`，用到的那点逻辑自己写在 `features/editor/highlighting.ts`）、`marked` + `dompurify`。构建改动见 [ADR 0003](adr/0003-esbuild-for-all-bundles.md) 的 M2 补充；文档和编辑器的设计见 [ARCHITECTURE.md](ARCHITECTURE.md)。
 
@@ -84,6 +84,8 @@
 - [x] smoke 改成 API 模式：`CCSHELL_SMOKE_API_KEY` 或 `CCSHELL_SMOKE_AUTH_TOKEN`，可选 `CCSHELL_SMOKE_BASE_URL`、`CCSHELL_SMOKE_MODEL`，注入测试设置里的 `claudeCode.environmentVariables`；没配就拒绝运行（`--subscription` 才用登录的账号）
 - [x] smoke 加了 diff 标签页的接受 / 拒绝两项
 - [x] smoke 再加：点聊天里的文件提及，Monaco 标签页打开该文件；计划模式下计划预览进内容面板
+- [x] 收尾时补的：语言配置（Ctrl+/ 注释、括号、缩进，取自 Monaco 自带的语言定义）；插件进程崩溃重启后，打开的文件连同未保存的修改自动回来；Markdown 预览显示工作区里的图片（`ccw://img`，只放行工作区内的图片文件）和 https 图片；只打包 Dark+ / Light+ 两套 Shiki 主题
+- [ ] 试用（最后加的弹出窗口、语言配置、崩溃恢复、Markdown 图片还没试过；拖文件进窗口没有自动测试）
 
 ## M3 评论：未开始
 
