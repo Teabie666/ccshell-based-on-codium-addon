@@ -18,6 +18,7 @@ import { EncodedTokenMetadata, INITIAL, type StateStack } from 'shiki/textmate';
 import type { ILogger } from '../../platform/log';
 import type { ThemeData } from '../../platform/protocol';
 import { colorIdForVariable, toHexColor } from './colors';
+import { configureLanguage } from './languageConfig';
 import type { MonacoApi } from './monaco';
 
 /** vscode-textmate's FontStyle bits (an ambient const enum there). */
@@ -156,6 +157,10 @@ export class Highlighting {
     if (!this.monaco.languages.getLanguages().some((language) => language.id === languageId)) {
       this.monaco.languages.register({ id: languageId });
     }
+    // Comments, brackets, indentation: independent of the grammar.
+    void configureLanguage(this.monaco, languageId).catch((error: unknown) =>
+      this.logger.warn(`no language configuration for ${languageId}`, error),
+    );
     const grammar = grammarFor(languageId);
     if (!grammar || this.tokenized.has(languageId)) {
       return Promise.resolve();

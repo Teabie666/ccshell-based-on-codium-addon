@@ -2,7 +2,11 @@
   "extends": "./tsconfig.base.json",
   "compilerOptions": {
     "lib": ["ES2023", "DOM", "DOM.Iterable"],
-    "types": []
+    "types": [],
+    // Monaco's language definitions have no declarations; type-check them against a stub.
+    "paths": {
+      "monaco-editor/languages/definitions/*": ["./src/features/editor/monacoLanguageDefinition.d.ts"]
+    }
   },
   "include": [
     "src/platform/**/*.ts",

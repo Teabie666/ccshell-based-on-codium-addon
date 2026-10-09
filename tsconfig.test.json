@@ -2,7 +2,11 @@
   "extends": "./tsconfig.base.json",
   "compilerOptions": {
     "lib": ["ES2023", "DOM"],
-    "types": ["node", "vscode"]
+    "types": ["node", "vscode"],
+    // As in tsconfig.web.json: Monaco's language definitions have no declarations.
+    "paths": {
+      "monaco-editor/languages/definitions/*": ["./src/features/editor/monacoLanguageDefinition.d.ts"]
+    }
   },
   "include": ["tests/unit/**/*.ts"]
 }

@@ -302,6 +302,16 @@ await step('a change on disk reloads the clean editor', async () => {
   await waitFor(async () => (await editorText()).includes('from outside'), 10_000, 'the editor to reload');
 });
 
+await step('Ctrl+/ toggles a line comment (the language configuration)', async () => {
+  await page.locator('#content-pane .monaco-editor .view-lines').click();
+  await page.keyboard.press('Control+Home');
+  await page.keyboard.press('Control+/');
+  await waitFor(async () => (await editorText()).includes('// export const answer'), 5000, 'the commented line');
+  await page.keyboard.press('Control+Z');
+  await waitFor(async () => !(await editorText()).includes('// export const answer'), 5000, 'the undo');
+  await waitFor(async () => (await page.locator('#content-pane .content-tab.dirty').count()) === 0, 5000, 'the tab clean again');
+});
+
 await step('Compare Active File with Saved opens a diff tab (vscode.diff)', async () => {
   await page.locator('#content-pane .monaco-editor .view-lines').click();
   await page.keyboard.press('Control+Home');
