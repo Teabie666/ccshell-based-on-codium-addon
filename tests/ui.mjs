@@ -577,6 +577,49 @@ await step('Diff Editor: Font Size applies to diffs only', async () => {
   return `diff ${diffSize}, editor ${editorSize}`;
 });
 
+await step('settings.json reaches every Monaco option; Default Settings (JSON) lists them all', async () => {
+  // Not in the settings editor, only in settings.json.
+  writeFileSync(settingsFile, JSON.stringify({ ...readSettings(), 'editor.rulers': [12] }, null, 2), 'utf8');
+  await press('Control+P');
+  await page.locator('.quick-input-filter').fill('sample.ts');
+  await waitFor(async () => (await page.locator('.quick-input-item').count()) > 0, 10_000, 'sample.ts in the list');
+  await page.locator('.quick-input-filter').press('Enter');
+  await waitFor(async () => (await page.locator('#content-pane .content-editor:not([hidden]) .view-ruler').count()) === 1, 10_000, 'the ruler');
+
+  await press('Control+,');
+  await page.locator('#content-pane .settings-open-defaults').click();
+  await waitFor(async () => (await page.locator('#content-pane .content-tab.active .tab-label').innerText()) === 'Default Settings', 10_000, 'the Default Settings tab');
+  await waitFor(async () => (await editorText()).includes('Every setting with its default value'), 10_000, 'the default settings text');
+  await page.screenshot({ path: path.join(runDir, 'default-settings.png') });
+  // Monaco renders only the visible lines of the long view: find an option only Monaco declares.
+  // Ctrl+F goes through the main process, which used to reach only text and diff panes.
+  await page.locator('#content-pane .content-editor:not([hidden]) .view-lines').click();
+  await press('Control+F');
+  await page.keyboard.type('"editor.rulers"');
+  await waitFor(async () => (await editorText()).includes('"editor.rulers": ['), 5000, 'editor.rulers found in the defaults');
+  await page.keyboard.press('Escape');
+
+  // Like any tab, it moves into its own window (scrolled where it was) and back.
+  const opened = app.waitForEvent('window');
+  await page.locator('#content-pane .icon-pop-out').click();
+  const aux = await opened;
+  const auxLines = aux.locator('.aux-body .view-lines');
+  await waitFor(async () => (await auxLines.count()) > 0 && (await auxLines.innerText()).includes('"editor.rulers"'), 10_000, 'the defaults in the new window, scrolled');
+  const closed = aux.waitForEvent('close');
+  await aux.locator('.icon-move-back').click();
+  await closed;
+  await waitFor(async () => (await page.locator('#content-pane .content-tab.active .tab-label').innerText()) === 'Default Settings', 5000, 'the tab back in the pane');
+
+  const { 'editor.rulers': _removed, ...rest } = readSettings();
+  writeFileSync(settingsFile, JSON.stringify(rest, null, 2), 'utf8');
+  for (let i = 0; i < 3 && (await contentTabs().count()) > 0; i++) {
+    await page.locator('#content-pane .content-tab.active .tab-close').click();
+    await page.waitForTimeout(200);
+  }
+  if ((await contentTabs().count()) > 0) throw new Error('tabs left open');
+  return 'ruler shown; editor.rulers found in the defaults; moved to a window and back';
+});
+
 await page.screenshot({ path: path.join(runDir, 'final.png') });
 
 await step('open conversations are restored after a restart', async () => {

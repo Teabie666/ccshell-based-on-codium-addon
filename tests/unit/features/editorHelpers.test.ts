@@ -1,7 +1,15 @@
 import { describe, test } from 'node:test';
 import assert from 'node:assert/strict';
 
+import type { SettingsService } from '../../../src/core/settings';
 import { colorIdForVariable, toHexColor } from '../../../src/features/editor/colors';
+import {
+  diffEditorOptions,
+  editorOptions,
+  mergeOptions,
+  monacoOptionDefinitions,
+  nestedOptions,
+} from '../../../src/features/editor/editorSettings';
 import { minimalReplacement } from '../../../src/features/editor/textModels';
 import { shortDiffTitle } from '../../../src/features/editor/titles';
 import { scorePath } from '../../../src/features/quickOpen/fuzzy';
@@ -52,6 +60,75 @@ describe('theme colors for Monaco', () => {
     assert.equal(colorIdForVariable('vscode-editor-background'), 'editor.background');
     assert.equal(colorIdForVariable('vscode-editorLineNumber-activeForeground'), 'editorLineNumber.activeForeground');
     assert.equal(colorIdForVariable('editor-background'), undefined);
+  });
+});
+
+describe('editor settings as Monaco options', () => {
+  test('nestedOptions turns dotted keys under a prefix into nested options', () => {
+    const values = {
+      'editor.rulers': [80],
+      'editor.minimap.side': 'left',
+      'editor.minimap.scale': 2,
+      'diffEditor.wordWrap': 'on',
+      'diffEditor.fontSize': 12,
+      'workbench.fontSize': 13,
+      'editor.__proto__.x': 1,
+    };
+    assert.deepEqual(nestedOptions(values, 'editor.'), { rulers: [80], minimap: { side: 'left', scale: 2 } });
+    assert.deepEqual(nestedOptions(values, 'diffEditor.', { wordWrap: 'diffWordWrap' }, new Set(['fontSize'])), { diffWordWrap: 'on' });
+  });
+
+  test('mergeOptions merges nested objects, the second winning', () => {
+    assert.deepEqual(mergeOptions({ minimap: { enabled: true }, rulers: [1] }, { minimap: { side: 'left' }, rulers: [2, 3] }), {
+      minimap: { enabled: true, side: 'left' },
+      rulers: [2, 3],
+    });
+  });
+
+  const fakeSettings = (values: Record<string, unknown>, declared: string[]): SettingsService =>
+    ({
+      values,
+      get: (key: string, fallback: unknown) => (key in values ? values[key] : fallback),
+      definition: (key: string) => (declared.includes(key) ? { key, section: 'S', schema: {} } : undefined),
+    }) as unknown as SettingsService;
+
+  test('editorOptions passes on declared settings only; fonts and indentation go another way', () => {
+    const settings = fakeSettings(
+      { 'editor.rulers': [80], 'editor.minimap.side': 'left', 'editor.readOnly': false, 'editor.fontSize': 20, 'editor.tabSize': 2 },
+      ['editor.rulers', 'editor.minimap.side', 'editor.fontSize', 'editor.tabSize'],
+    );
+    const options = editorOptions(settings);
+    assert.deepEqual(options.rulers, [80]);
+    assert.deepEqual(options.minimap, { enabled: true, side: 'left' });
+    assert.deepEqual(['readOnly', 'fontSize', 'tabSize'].filter((name) => name in options), []);
+  });
+
+  test("diffEditorOptions uses Monaco's names, and its own font only when set", () => {
+    const settings = fakeSettings(
+      { 'diffEditor.wordWrap': 'on', 'diffEditor.hideUnchangedRegions.enabled': true, 'diffEditor.fontSize': 0, 'diffEditor.originalEditable': true },
+      ['diffEditor.wordWrap', 'diffEditor.hideUnchangedRegions.enabled', 'diffEditor.fontSize'],
+    );
+    const options = diffEditorOptions(settings);
+    assert.equal(options.diffWordWrap, 'on');
+    assert.deepEqual(options.hideUnchangedRegions, { enabled: true });
+    assert.deepEqual(['wordWrap', 'fontSize', 'originalEditable'].filter((name) => name in options), []);
+  });
+
+  test("monacoOptionDefinitions reads Monaco's schemas: one setting, or a map of full keys", () => {
+    const options = {
+      rulers: { name: 'rulers', schema: { type: 'array', default: [] } },
+      minimap: { name: 'minimap', schema: { 'editor.minimap.side': { type: 'string', enum: ['left', 'right'] } } },
+      internal: { name: 'internal' },
+      fontSize: { name: 'fontSize', schema: { type: 'number' } },
+    };
+    const definitions = monacoOptionDefinitions(options, 'Text Editor', (key) => key === 'editor.fontSize');
+    assert.deepEqual(
+      definitions.map((definition) => [definition.key, definition.hidden]),
+      [
+        ['editor.rulers', true],
+        ['editor.minimap.side', true],
+      ],
+    );
   });
 });
 

@@ -5,6 +5,7 @@ import type { SettingDefinition } from '../../../src/core/settings';
 import { extensionSettingDefinitions } from '../../../src/features/settings/extensionSettings';
 import {
   controlKind,
+  defaultSettingsText,
   groupBySection,
   matchesQuery,
   parseNumber,
@@ -96,6 +97,48 @@ describe('settingsJsonSchema', () => {
       additionalProperties: true,
       properties: { 'a.b': { type: 'string', description: '' }, n: { type: 'number', minimum: 1 } },
     });
+  });
+});
+
+describe('defaultSettingsText', () => {
+  test('JSON with comments: sections, descriptions, described values, defaults; no comma after the last', () => {
+    const text = defaultSettingsText(
+      [
+        { key: 'a.size', section: 'A', schema: { type: 'number', default: 14, description: 'The `size`.' } },
+        { key: 'b.mode', section: 'B', schema: { type: 'string', default: 'on', enum: ['on', 'off'], enumDescriptions: ['On.', ''] } },
+        { key: 'b.list', section: 'B', schema: { type: 'array', default: ['x'], deprecationMessage: 'Gone.' } },
+        { key: 'b.weight', section: 'B', schema: { type: 'string', default: 'normal', enum: ['normal', 'bold'] } },
+      ],
+      { header: 'Defaults.\nRead only.', deprecated: 'Deprecated' },
+    );
+    assert.equal(
+      text,
+      [
+        '// Defaults.',
+        '// Read only.',
+        '{',
+        '',
+        '  // ---- A ----',
+        '',
+        '  // The size.',
+        '  "a.size": 14,',
+        '',
+        '  // ---- B ----',
+        '',
+        '  // Deprecated: Gone.',
+        '  "b.list": [',
+        '    "x"',
+        '  ],',
+        '',
+        '  //  - "on": On.',
+        '  //  - "off"',
+        '  "b.mode": "on",',
+        '',
+        '  "b.weight": "normal"',
+        '}',
+        '',
+      ].join('\n'),
+    );
   });
 });
 

@@ -28,6 +28,8 @@ export interface SettingsEditorContext {
   readonly settings: SettingsService;
   /** Opens settings.json, showing `key` (added with its default value if missing). */
   readonly openJson: (key?: string) => void;
+  /** Opens the read-only default settings. */
+  readonly openDefaults: () => void;
   readonly logger: ILogger;
 }
 
@@ -261,7 +263,11 @@ export class SettingsEditorPane implements EditorPane {
     openJson.className = 'button secondary settings-open-json';
     openJson.textContent = t('openJson');
     openJson.addEventListener('click', () => context.openJson());
-    header.append(this.search, this.count, openJson);
+    const openDefaults = doc.createElement('button');
+    openDefaults.className = 'button secondary settings-open-defaults';
+    openDefaults.textContent = t('defaultSettingsButton');
+    openDefaults.addEventListener('click', () => context.openDefaults());
+    header.append(this.search, this.count, openJson, openDefaults);
 
     const body = doc.createElement('div');
     body.className = 'settings-body';

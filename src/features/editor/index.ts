@@ -37,7 +37,15 @@ import { loadMonaco, type JsonLanguage, type MonacoApi } from './monaco';
 import { TextEditorPane, editorFontOptions, type TextInputData } from './textEditorPane';
 import { basename, shortDiffTitle } from './titles';
 import { TextModels, type TextModel } from './textModels';
-import { diffEditorOptions, editorOptions, editorSettingDefinitions, indentation, isEditorSetting } from './editorSettings';
+import {
+  diffEditorOptions,
+  editorOptions,
+  editorSettingDefinitions,
+  indentation,
+  isEditorSetting,
+  mergeOptions,
+  monacoOptionDefinitions,
+} from './editorSettings';
 import type { SettingsService } from '../../core/settings';
 
 /** The input type of documents shown in a text editor (other modules may claim some, e.g. Markdown). */
@@ -49,6 +57,21 @@ function tabInputId(tabId: string): string {
   return `tab:${tabId}`;
 }
 
+
+/** A read-only editor on generated text (`TextEditorService.createViewer`). */
+export interface TextViewer {
+  setText(text: string): void;
+  focus(): void;
+  /** A new widget in `container` (e.g. another window's), same text, same view state. */
+  relocate(container: HTMLElement): void;
+  dispose(): void;
+}
+
+/** What the find command needs of a Monaco editor (a standalone one or a diff side). */
+interface FindTarget {
+  hasTextFocus(): boolean;
+  getAction(id: string): { run(): Promise<void> } | null;
+}
 
 /** A JSON schema and the documents it applies to (their URIs). */
 export interface JsonSchemaAssociation {
@@ -104,13 +127,82 @@ export class TextEditorService {
   readonly textOptions = (): Record<string, unknown> => ({ ...editorFontOptions(), ...editorOptions(this.settings) });
 
   /** Options of a diff editor: a text editor's, and the diff settings. */
-  readonly diffOptions = (): Record<string, unknown> => ({ ...this.textOptions(), ...diffEditorOptions(this.settings) });
+  readonly diffOptions = (): Record<string, unknown> => mergeOptions(this.textOptions(), diffEditorOptions(this.settings));
+
+  private readonly viewers = new Set<ReturnType<MonacoApi['editor']['create']>>();
+
+  /** The Monaco editor with text focus, of any kind (text, either side of a diff, viewer). */
+  focusedCodeEditor(): FindTarget | undefined {
+    const candidates: FindTarget[] = [
+      ...[...this.panes.values()].map((pane) => pane.editor),
+      ...[...this.diffPanes].flatMap((pane) => [pane.editor.getModifiedEditor(), pane.editor.getOriginalEditor()]),
+      ...this.viewers,
+    ];
+    return candidates.find((editor) => editor.hasTextFocus());
+  }
+
+  /**
+   * A read-only editor on text the shell generates (no document behind it, the extension
+   * does not see it), e.g. the default settings.
+   */
+  async createViewer(
+    container: HTMLElement,
+    uri: string,
+    /** Asked once the editor is loaded (its option settings are declared by then). */
+    text: () => string,
+    languageId: string,
+  ): Promise<TextViewer> {
+    const { monaco, highlighting } = await this.ready();
+    void highlighting.ensureLanguage(languageId);
+    const modelUri = monaco.Uri.parse(uri);
+    const model = monaco.editor.getModel(modelUri) ?? monaco.editor.createModel('', languageId, modelUri);
+    model.setValue(text());
+    const create = (parent: HTMLElement): ReturnType<MonacoApi['editor']['create']> => {
+      const created = monaco.editor.create(parent, {
+        ...this.textOptions(),
+        model,
+        readOnly: true,
+        automaticLayout: true,
+        fixedOverflowWidgets: true,
+      });
+      this.viewers.add(created);
+      return created;
+    };
+    const disposeEditor = (): void => {
+      this.viewers.delete(editor);
+      editor.dispose();
+    };
+    let editor = create(container);
+    return {
+      setText: (value) => {
+        if (model.getValue() !== value) {
+          model.setValue(value);
+        }
+      },
+      focus: () => editor.focus(),
+      relocate: (target) => {
+        const viewState = editor.saveViewState();
+        disposeEditor();
+        editor = create(target);
+        if (viewState) {
+          editor.restoreViewState(viewState);
+        }
+      },
+      dispose: () => {
+        disposeEditor();
+        model.dispose();
+      },
+    };
+  }
 
   /** Settings or fonts changed: every open editor and model follows. */
   applySettings(): void {
     const text = this.textOptions();
     for (const pane of this.panes.values()) {
       pane.editor.updateOptions(text);
+    }
+    for (const viewer of this.viewers) {
+      viewer.updateOptions(text);
     }
     const diff = this.diffOptions();
     for (const pane of this.diffPanes) {
@@ -135,6 +227,10 @@ export class TextEditorService {
       const { monaco, json } = await loadMonaco(getUiLanguage());
       this.json = json;
       this.applyJsonSchemas();
+      // Every Monaco option can be set in settings.json, with Monaco's own descriptions.
+      this.settings.register(
+        monacoOptionDefinitions(monaco.editor.EditorOptions, t('sectionTextEditor'), (key) => this.settings.definition(key) !== undefined),
+      );
       const highlighting = new Highlighting(monaco, this.logger.child('highlighting'));
       await highlighting.setTheme(this.themes.current);
       const models = new TextModels(monaco, highlighting, this.connection, this.logger.child('models'), (model) =>
@@ -498,8 +594,7 @@ export const editorModule: ShellModule = {
       }),
       commands.register(
         'editor.find',
-        () => (editors.activePane?.editor ?? editors.activeDiff?.editor.getModifiedEditor())?.getAction('actions.find')?.run(),
-        { when: 'activeEditorIsText' },
+        () => (editors.focusedCodeEditor() ?? editors.activePane?.editor ?? editors.activeDiff?.editor.getModifiedEditor())?.getAction('actions.find')?.run(),
       ),
       commands.register(
         'editor.compareWithSaved',

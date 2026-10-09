@@ -20,12 +20,14 @@ import {
 import { DisposableStore } from '../../platform/lifecycle';
 import { IContentPane } from '../contentPane';
 import { ITextEditors } from '../editor';
+import { DefaultSettingsPane } from './defaultSettings';
 import { extensionSettingDefinitions } from './extensionSettings';
 import { t } from './messages';
 import { SettingsEditorPane } from './settingsEditor';
 import { settingsJsonSchema } from './settingItems';
 
 const SETTINGS_INPUT = 'settings';
+const DEFAULTS_INPUT = 'settings-defaults';
 
 /**
  * The JSON language service matches a schema's `fileMatch` as a glob (with `**\/` put in
@@ -78,11 +80,21 @@ export const settingsModule: ShellModule = {
       openJson(key).catch((error: unknown) => logger.error('opening settings.json failed', error));
     };
 
+    const openDefaults = (): void => {
+      contentPane.open({ id: DEFAULTS_INPUT, typeId: DEFAULTS_INPUT, label: t('defaultSettingsTitle') }, { preview: false });
+    };
     subscriptions.add(
       services.get(IEditors).register({
         id: 'settings.editor',
         accepts: (input) => input.typeId === SETTINGS_INPUT,
-        create: (container) => new SettingsEditorPane(container, { settings, openJson: openJsonLogged, logger }),
+        create: (container) => new SettingsEditorPane(container, { settings, openJson: openJsonLogged, openDefaults, logger }),
+      }),
+    );
+    subscriptions.add(
+      services.get(IEditors).register({
+        id: 'settings.defaults',
+        accepts: (input) => input.typeId === DEFAULTS_INPUT,
+        create: (container) => new DefaultSettingsPane(container, editors, settings, logger),
       }),
     );
     const openUi = (): void => {
@@ -126,6 +138,12 @@ export const settingsModule: ShellModule = {
     subscriptions.add(
       commands.register('settings.openJson', () => openJsonLogged(), {
         title: t('openSettingsJson'),
+        category: CommandCategory.preferences,
+      }),
+    );
+    subscriptions.add(
+      commands.register('settings.openDefaults', openDefaults, {
+        title: t('openDefaultSettings'),
         category: CommandCategory.preferences,
       }),
     );

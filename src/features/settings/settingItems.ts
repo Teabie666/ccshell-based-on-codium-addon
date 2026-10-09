@@ -121,6 +121,49 @@ export function settingsJsonSchema(definitions: readonly SettingDefinition[]): R
   return { type: 'object', properties, additionalProperties: true };
 }
 
+/**
+ * Every declared setting with its default as JSON with comments, like VS Code's default
+ * settings: by section, each with its description, allowed values and any deprecation as
+ * comments. A read-only reference to copy from into settings.json.
+ */
+export function defaultSettingsText(
+  definitions: readonly SettingDefinition[],
+  labels: { readonly header: string; readonly deprecated: string },
+): string {
+  const lines = [...labels.header.split('\n').map((line) => `// ${line}`), '{'];
+  let lastValueLine = -1;
+  for (const { section, settings } of groupBySection(definitions)) {
+    lines.push('', `  // ---- ${section} ----`);
+    for (const { key, schema } of settings) {
+      lines.push('');
+      const description = descriptionOf(schema);
+      for (const line of description ? description.split('\n') : []) {
+        lines.push(`  // ${line}`);
+      }
+      const deprecation = deprecationOf(schema);
+      if (deprecation) {
+        lines.push(`  // ${labels.deprecated}: ${deprecation}`);
+      }
+      // As in VS Code, the values are listed only when some are described (completion offers them anyway).
+      const descriptions = schema.markdownEnumDescriptions ?? schema.enumDescriptions;
+      if (descriptions?.some((text) => text)) {
+        (schema.enum ?? []).forEach((value, index) => {
+          const text = descriptions[index];
+          lines.push(`  //  - ${JSON.stringify(value)}${text ? `: ${plainText(text)}` : ''}`);
+        });
+      }
+      const value = JSON.stringify(schema.default ?? null, null, 2).replace(/\n/g, '\n  ');
+      lines.push(`  ${JSON.stringify(key)}: ${value},`);
+      lastValueLine = lines.length - 1;
+    }
+  }
+  if (lastValueLine >= 0) {
+    lines[lastValueLine] = lines[lastValueLine]!.replace(/,$/, '');
+  }
+  lines.push('}', '');
+  return lines.join('\n');
+}
+
 /** Sections in the order modules registered them; settings in a section by order, then key. */
 export function groupBySection(definitions: readonly SettingDefinition[]): { section: string; settings: SettingDefinition[] }[] {
   const groups: { section: string; settings: SettingDefinition[] }[] = [];
