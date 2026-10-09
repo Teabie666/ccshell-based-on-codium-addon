@@ -372,6 +372,119 @@ await step('a Markdown file opens as a preview, with highlighted code and a loca
   await waitFor(async () => (await contentTabs().count()) === 1, 5000, 'the Markdown tab to close');
 });
 
+// ---- M3: comments on selected text --------------------------------------------------------
+
+const conversationFrame = async () => (await activeConversation().elementHandle())?.contentFrame();
+const commentBlocks = (frame) => frame.locator('.vilaus-comments .vilaus-comment');
+const editorLine = (text) => page.locator('#content-pane .content-editor:not([hidden]) .view-line', { hasText: text }).first();
+
+async function submitCommentForm(text) {
+  const input = page.locator('.comment-form-input');
+  await input.waitFor({ timeout: 5000 });
+  await input.fill(text);
+  await input.press('Enter');
+  await waitFor(async () => (await page.locator('.comment-form').count()) === 0, 5000, 'the comment form to close');
+}
+
+async function addComment(text) {
+  const button = page.locator('.selection-toolbar-button', { hasText: 'Comment' });
+  await waitFor(async () => (await button.count()) > 0, 5000, 'the Comment button by the selection');
+  await button.click();
+  await submitCommentForm(text);
+}
+
+await step('selecting text in an editor offers Comment; the comment shows above the conversation input', async () => {
+  const box = await editorLine('answer').boundingBox();
+  await page.mouse.move(box.x + 100, box.y + box.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(box.x + 200, box.y + box.height / 2, { steps: 5 });
+  await page.mouse.up();
+  await addComment('Why 42?');
+  const frame = await conversationFrame();
+  await waitFor(async () => (await commentBlocks(frame).count()) === 1, 5000, 'a block in the conversation');
+  const placed = await frame.evaluate(() => {
+    const next = document.querySelector('.vilaus-comments')?.nextElementSibling;
+    return next?.tagName === 'FORM' && next.querySelector('[role="textbox"][aria-label="Message input"]') !== null;
+  });
+  if (!placed) throw new Error('the blocks are not right before the input form');
+  // Earlier steps added lines above it; the label carries the line it is on now.
+  const source = await commentBlocks(frame).first().locator('.vilaus-comment-source').innerText();
+  if (!/^sample\.ts:\d+$/.test(source)) throw new Error(`the block points at ${source}`);
+  await page.screenshot({ path: path.join(runDir, 'comments.png') });
+  return source;
+});
+
+await step('a selection in the Markdown preview is commented with its source line', async () => {
+  await press('Control+P');
+  await page.locator('.quick-input-filter').fill('notes.md');
+  await waitFor(async () => (await page.locator('.quick-input-item').count()) > 0, 10_000, 'notes.md in the list');
+  await page.locator('.quick-input-filter').press('Enter');
+  const preview = page.locator('#content-pane .content-editor:not([hidden]) .markdown-preview');
+  await waitFor(async () => (await preview.locator('h1').count()) === 1, 10_000, 'the preview');
+  await preview.evaluate((element) => {
+    const walker = document.createTreeWalker(element, NodeFilter.SHOW_TEXT);
+    for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+      const at = node.textContent.indexOf('the sample');
+      if (at >= 0) {
+        document.getSelection().setBaseAndExtent(node, at, node, at + 'the sample'.length);
+        element.dispatchEvent(new MouseEvent('mouseup', { bubbles: true }));
+        return;
+      }
+    }
+  });
+  await addComment('Is this the right file?');
+  const frame = await conversationFrame();
+  await waitFor(async () => (await commentBlocks(frame).count()) === 2, 5000, 'two blocks');
+  // Newest on top; "the sample" is on line 3 of the source.
+  const source = await commentBlocks(frame).first().locator('.vilaus-comment-source').innerText();
+  if (source !== 'notes.md:3') throw new Error(`the newest block points at ${source}`);
+  return source;
+});
+
+await step('a comment block edits in place, shows its text in the editor, and deletes', async () => {
+  const frame = await conversationFrame();
+  const blocks = commentBlocks(frame);
+  await blocks.first().hover();
+  await blocks.first().locator('[data-action="edit"]').click();
+  const input = page.locator('.comment-form-overlay .comment-form-input');
+  await input.waitFor({ timeout: 5000 });
+  if ((await input.inputValue()) !== 'Is this the right file?') throw new Error(`the form holds "${await input.inputValue()}"`);
+  await input.fill('Link the README instead.');
+  await input.press('Enter');
+  const text = blocks.first().locator('.vilaus-comment-text');
+  await waitFor(async () => (await text.innerText()) === 'Link the README instead.', 5000, 'the edited text');
+
+  // The older block points into sample.ts, a tab behind notes.md.
+  await blocks.last().locator('[data-action="reveal"]').click();
+  await waitFor(async () => (await page.locator('#content-pane .content-tab.active .tab-label').innerText()) === 'sample.ts', 5000, 'sample.ts to come forward');
+  await waitFor(async () => (await page.locator('#content-pane .content-editor:not([hidden]) .selected-text').count()) > 0, 5000, 'the commented text selected');
+
+  await blocks.first().hover();
+  await blocks.first().locator('[data-action="remove"]').click();
+  await waitFor(async () => (await blocks.count()) === 1, 5000, 'one block left');
+});
+
+await step('Ctrl+Alt+M comments on the selection; more than three comments fold into a count', async () => {
+  for (const word of ['greet', 'return', 'comment']) {
+    await editorLine(word).click();
+    await press('Home');
+    await press('Shift+End');
+    await press('Control+Alt+M');
+    await submitCommentForm(`About ${word}`);
+  }
+  const frame = await conversationFrame();
+  await waitFor(async () => (await commentBlocks(frame).count()) === 4, 5000, 'four blocks');
+  if (!(await frame.locator('.vilaus-comments-list').isHidden())) throw new Error('four comments are not folded');
+  const header = (await frame.locator('.vilaus-comments-toggle').innerText()).trim();
+  if (header !== '4 comments') throw new Error(`the header says ${header}`);
+  await frame.locator('.vilaus-comments-toggle').click();
+  await waitFor(() => frame.locator('.vilaus-comments-list').isVisible(), 3000, 'the list to unfold');
+  // As the steps below expect: sample.ts alone in the pane.
+  await page.locator('#content-pane .content-tab', { hasText: 'notes.md' }).click({ button: 'middle' });
+  await waitFor(async () => (await contentTabs().count()) === 1, 5000, 'notes.md to close');
+  return header;
+});
+
 await step('Ctrl+W in the editor closes its tab and the pane hides; the conversation stays', async () => {
   const conversations = await tabCount();
   await page.locator('#content-pane .monaco-editor .view-lines').click();
@@ -632,7 +745,27 @@ await step('open conversations are restored after a restart', async () => {
   app = await launch();
   page = await app.firstWindow();
   await waitFor(async () => (await tabCount()) === 2, 30_000, 'both tabs to come back');
-  return `${await tabCount()} tabs restored`;
+  // The first conversation's comments (not sent yet) come back with it.
+  await waitFor(async () => {
+    for (const frame of webviewFrames()) {
+      if ((await commentBlocks(frame).count().catch(() => 0)) === 4) return true;
+    }
+    return false;
+  }, 30_000, 'the four comments to come back');
+  return `${await tabCount()} tabs restored, with the comments`;
+});
+
+await step('when the page has no place for them, comments show in a bar below the conversation', async () => {
+  await page.locator('#tabs .tab').first().click();
+  const frame = await waitFor(async () => {
+    const candidate = await conversationFrame();
+    return candidate && (await commentBlocks(candidate).count()) === 4 ? candidate : undefined;
+  }, 10_000, 'the conversation with comments');
+  await frame.evaluate(() => document.querySelector('form:has([role="textbox"][aria-label="Message input"])')?.remove());
+  const bar = page.locator('#main .panel:not([hidden]) .comments-bar:not([hidden])');
+  await waitFor(async () => (await bar.locator('.comments-bar-item').count()) === 4, 5000, 'the shell bar with four comments');
+  await bar.locator('[data-action="clear"]').click();
+  await waitFor(async () => (await bar.count()) === 0, 5000, 'the bar to go once the comments are cleared');
 });
 
 await step('Configure Display Language switches the shell to Chinese after a restart', async () => {
