@@ -13,7 +13,6 @@
 import { createHighlighterCore, type HighlighterCore, type ThemeRegistration, type ThemeRegistrationResolved } from 'shiki/core';
 import { createJavaScriptRegexEngine } from 'shiki/engine/javascript';
 import { bundledLanguages } from 'shiki/langs';
-import { bundledThemes } from 'shiki/themes';
 import { EncodedTokenMetadata, INITIAL, type StateStack } from 'shiki/textmate';
 import type { ILogger } from '../../platform/log';
 import type { ThemeData } from '../../platform/protocol';
@@ -94,7 +93,8 @@ export class Highlighting {
   async setTheme(theme: ThemeData): Promise<void> {
     const highlighter = await this.load();
     const name = `ccshell-${theme.id}`;
-    const tokenTheme = (await bundledThemes[isLight(theme) ? 'light-plus' : 'dark-plus']()).default;
+    // Only these two themes are ever used; `bundledThemes` would ship every Shiki theme.
+    const tokenTheme = (await (isLight(theme) ? import('shiki/themes/light-plus.mjs') : import('shiki/themes/dark-plus.mjs'))).default;
     const colors: Record<string, string> = {};
     for (const [id, value] of Object.entries(tokenTheme.colors ?? {})) {
       const hex = toHexColor(value);
