@@ -199,6 +199,7 @@ Electron main ── 窗口、CLI、单实例、配置/状态存储（唯一写�
 - 查询 Open VSX，下载 VSIX，用 `.sha256` 校验，解压 `extension/` 到 `extensions\anthropic.claude-code-<ver>\`，下次启动时切换过去。保留上一个版本用于回滚。
 - 设置项：自动更新开关、锁定版本。记录"最后一个能正常运行的版本"：新版本激活失败，或者没实现的 API 突然变多，就提示回滚。
 - 首次启动显示下载进度，下完走登录，或者选一个 API 接口。开发时用 `--extension-dir` 指向 VSCodium 里的插件。
+- **下载不了时的备用办法**（断网、Open VSX 访问不了）：可以手动选一个 `.vsix` 文件导入，或者直接用本机 VS Code / VSCodium 里已经装好的插件。手动导入的包没法跟 Open VSX 对校验值，改为检查包的结构和 `package.json` 里的发布者、名字、平台。
 
 ## 主题
 
@@ -227,6 +228,11 @@ Electron main ── 窗口、CLI、单实例、配置/状态存储（唯一写�
 
 electron-builder 打 NSIS 安装包：可以选只装当前用户，或装到 Program Files 给所有用户；建开始菜单和桌面快捷方式；卸载时默认保留 `%APPDATA%\ccshell`。安装包里不含任何 Anthropic 代码，插件在首次启动时从 Open VSX 下载。不出便携版。**名字、图标这些全部做完后单独研究。**
 
+- **目标环境**：一台干净的 Windows 10/11 x64，只有安装包和网络。有 Claude 账号，或者有某个接口的 API 和 key，装好就能用 Claude Code 和 ccshell 的功能：不需要 VS Code / VSCodium，不需要单独装 Claude Code CLI（插件包里自带 `claude.exe`），不需要 Node、Python、Git。第一次启动要联网下载插件（Open VSX 上 Anthropic 认证发布的包，2.1.295 约 116 MB）。
+- **Git for Windows 可选**：找不到 Git Bash 时，Claude Code（2.1.282 起）自动改用它的 PowerShell 工具；装了 Git，Claude 才能跑 bash 命令、做 git 操作、用 `shell: bash` 的技能。首次启动提示一次（说明 + 下载链接），不打包。Git 不在默认位置时，用环境变量 `CLAUDE_CODE_GIT_BASH_PATH` 指定 `bash.exe`。
+- **发布**：安装包放在 GitHub Releases，新版本由使用者手动下载安装，不做程序内自动更新。
+- **不做代码签名**：第一次运行安装包会被 SmartScreen 拦一下，发布说明里写清楚怎么放行（"更多信息" → "仍要运行"）。
+
 ## 分阶段交付（每个阶段结束都能用，试用后再继续）
 
 - **M0 技术验证**：
@@ -246,8 +252,8 @@ electron-builder 打 NSIS 安装包：可以选只装当前用户，或装到 Pr
 - **M2 内容面板 + Monaco**：打开文件、Ctrl+P、Markdown 预览、保存和外部修改处理、选区同步、diff 标签页、计划预览标签页、弹出成独立窗口。
 - **M3 评论**：完整复刻上面描述的交互。
 - **M3.5 插件界面汉化（可选）**：界面语言是中文时，插件自己界面里的短文字按对照表显示中文；插件文件不改，对照表不带原文，对话内容不动。
-- **M4 配置 / CLI / API 接口 / 插件管理**：settings 加 schema 和热更新、CLI 参数和单实例、API 接口和加密存储、导入 DeepSeek、快捷方式、Open VSX 下载/更新/回滚、首次启动流程。
-- **M5 打包**：NSIS 安装包，在全新环境下测试（临时 user-data-dir、不依赖 VSCodium、模拟没登录的情况）。
+- **M4 配置 / CLI / API 接口 / 插件管理**：settings 加 schema 和热更新、CLI 参数和单实例、API 接口和加密存储、导入 DeepSeek、快捷方式、Open VSX 下载/更新/回滚（下载不了时手动导入）、首次启动流程（含可选安装 Git 的提示）。
+- **M5 打包和发布**：NSIS 安装包，在全新环境下测试（临时 user-data-dir、不依赖 VSCodium、模拟没登录的情况），再在干净的 Windows 虚拟机里从零测一遍；发布到 GitHub Releases。
 - **M6 名字、图标、视觉打磨**（单独讨论）。
 
 ## 验证
@@ -261,7 +267,7 @@ electron-builder 打 NSIS 安装包：可以选只装当前用户，或装到 Pr
   - 切到一个兼容接口，新对话的环境变量正确（检查子进程环境，不实际调用）。
 - **单元测试**（node:test / vitest）：protocol 校验、Uri、配置合并、Memento、tabGroups、bridge、providers 生成的环境变量、评论格式。
 - **每个阶段的手动检查**：用屏幕工具截图，跟 VSCodium 里的同一界面对比；检查 `shim-unimplemented.log`；确认没有往 `C:\Program Files\VSCodium` 写任何东西；确认 git 里没提交任何密钥。
-- **安装包测试**：装到 Program Files，分别用普通权限和管理员权限运行，再卸载。
+- **安装包测试**：装到 Program Files，分别用普通权限和管理员权限运行，再卸载。另外在干净的 Windows 虚拟机里（开发机是 Windows 11 家庭版，没有 Windows Sandbox）从零走一遍：安装 → 首次启动下载插件 → 登录或配置 API → 发消息、审批改文件，没装 Git 时 Claude 用 PowerShell。
 
 ## 风险
 

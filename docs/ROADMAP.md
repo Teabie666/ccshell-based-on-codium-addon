@@ -136,13 +136,17 @@ API 接口（`features/providers`）
 - [x] 开发时用 `--extension-dir` 指定插件目录（不指定就从 VSCodium 的安装目录找）
 - [ ] 查询 Open VSX → 下载 VSIX → 用 `.sha256` 校验 → 解压 `extension/` 到 `extensions\anthropic.claude-code-<ver>\` → 下次启动时切换过去；保留上一个版本用于回滚
 - [ ] 设置项：自动更新开关、锁定版本；记录"最后一个能正常运行的版本"，新版本激活失败或者没实现的 API 突然变多，就提示回滚
-- [ ] 首次启动：显示下载进度，下完走登录，或者选一个 API 接口
+- [ ] 下载不了时的备用办法：手动选 `.vsix` 文件导入，或者用本机 VS Code / VSCodium 里装好的插件（检查包结构和 `package.json` 的发布者、名字、平台）
+- [ ] 首次启动：显示下载进度，下完走登录，或者选一个 API 接口；提示一次可选安装 Git for Windows（没有也能用，Claude 改用 PowerShell）
 
-## M5 打包：未开始
+## M5 打包和发布：未开始
 
 - [ ] electron-builder 打 NSIS 安装包：可以选只装当前用户，或装到 Program Files 给所有用户；建开始菜单和桌面快捷方式；卸载时默认保留 `%APPDATA%\ccshell`
 - [ ] 安装包里不含任何 Anthropic 代码（插件首次启动时从 Open VSX 下载）；不出便携版
+- [ ] 目标环境：干净的 Windows 10/11 x64，只有安装包和网络；不需要 VS Code / VSCodium、单独的 Claude Code CLI、Node、Python、Git
+- [ ] 发布到 GitHub Releases，新版本手动下载安装（不做自动更新）；不做代码签名，发布说明写清楚 SmartScreen 怎么放行
 - [ ] 全新环境测试：临时 user-data-dir、不依赖 VSCodium、模拟没登录的情况
+- [ ] 干净的 Windows 虚拟机里从零测一遍（开发机没有 Windows Sandbox）：安装 → 首次启动下载插件 → 登录或配置 API → 发消息、审批改文件；没装 Git 时 Claude 用 PowerShell
 - [ ] 装到 Program Files，分别用普通权限和管理员权限运行，再卸载
 
 ## M6 名字、图标、视觉打磨：单独讨论
