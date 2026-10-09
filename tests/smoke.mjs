@@ -10,7 +10,8 @@
 //   VILAUS_SMOKE_MODEL       optional, default claude-haiku-4-5-20251001
 import { _electron as electron } from 'playwright-core';
 import electronPath from 'electron';
-import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 
 // Anthropic's consumer terms allow automated (scripted) access only through an API key, so
@@ -249,6 +250,71 @@ await step('io_message shape was logged', async () => {
   const line = log.split('\n').find((l) => l.includes('io_message shape:'));
   if (!line) throw new Error('no io_message shape line in exthost.log');
   return line.slice(line.indexOf('io_message shape:'));
+});
+
+// ---- M3: comments go out with the next message --------------------------------------------
+
+/** A shortcut through Electron's input pipeline, so main's intercepted chords work (see tests/ui.mjs). */
+async function press(shortcut) {
+  const parts = shortcut.split('+');
+  const keyCode = parts.pop();
+  const modifiers = parts.map((m) => m.toLowerCase());
+  await app.evaluate(({ BrowserWindow }, { keyCode, modifiers }) => {
+    const window = BrowserWindow.getAllWindows().find((w) => w.webContents.getURL().startsWith('ccw://app/'));
+    window.webContents.sendInputEvent({ type: 'keyDown', keyCode, modifiers });
+    window.webContents.sendInputEvent({ type: 'keyUp', keyCode, modifiers });
+  }, { keyCode, modifiers });
+}
+
+/** The user messages of this run's sessions that carry a comments block. */
+function sentCommentBlocks(since) {
+  const projects = path.join(os.homedir(), '.claude', 'projects');
+  const blocks = [];
+  for (const project of existsSync(projects) ? readdirSync(projects) : []) {
+    const dir = path.join(projects, project);
+    for (const file of readdirSync(dir).filter((name) => name.endsWith('.jsonl'))) {
+      if (statSync(path.join(dir, file)).mtimeMs < since) continue;
+      for (const line of readFileSync(path.join(dir, file), 'utf8').split('\n')) {
+        if (!line.includes('Comments on selected text:')) continue;
+        const content = JSON.parse(line).message?.content;
+        for (const block of Array.isArray(content) ? content : []) {
+          if (block.type === 'text' && block.text.startsWith('Comments on selected text:')) blocks.push(block.text);
+        }
+      }
+    }
+  }
+  return blocks;
+}
+
+await step('two comments show above the input, go out with the next message, and clear', async () => {
+  const started = Date.now();
+  writeFileSync(path.join(workspace, 'fruit.txt'), 'first line: apples\nsecond line: bananas\n', 'utf8');
+  await press('Control+P');
+  await page.locator('.quick-input-filter').fill('fruit.txt');
+  await waitFor(async () => (await page.locator('.quick-input-item').count()) > 0, 10_000, 'fruit.txt in quick open');
+  await page.locator('.quick-input-filter').press('Enter');
+  const line = (text) => page.locator('#content-pane .content-editor:not([hidden]) .view-line', { hasText: text }).first();
+  await waitFor(async () => (await line('bananas').count()) > 0, 10_000, 'fruit.txt in Monaco');
+  for (const [word, comment] of [['apples', 'kiwi-note'], ['bananas', 'mango-note']]) {
+    await line(word).click();
+    await press('Home');
+    await press('Shift+End');
+    await press('Control+Alt+M');
+    const input = page.locator('.comment-form-input');
+    await input.waitFor({ timeout: 5000 });
+    await input.fill(comment);
+    await input.press('Enter');
+  }
+  const blocks = frame.locator('.vilaus-comments .vilaus-comment');
+  await waitFor(async () => (await blocks.count()) === 2, 5000, 'two blocks above the input');
+  await send('Reply with only the word ok.');
+  await waitFor(async () => (await blocks.count()) === 0, 10_000, 'the blocks to clear once the message is sent');
+  await waitForIdle();
+  const sent = await waitFor(() => sentCommentBlocks(started).at(-1), 10_000, 'the comments in the session transcript');
+  const paragraphs = sent.split('\n\n').filter((paragraph) => paragraph.startsWith('[Re: "'));
+  const expected = ['[Re: "first line: apples" — fruit.txt:1] kiwi-note', '[Re: "second line: bananas" — fruit.txt:2] mango-note'];
+  if (paragraphs.join('|') !== expected.join('|')) throw new Error(`the message carried: ${JSON.stringify(sent)}`);
+  return `${paragraphs.length} [Re: …] paragraphs sent`;
 });
 
 // Last: Claude may keep planning after the plan is declined.
