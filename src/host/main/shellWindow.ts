@@ -34,6 +34,8 @@ import { t } from './messages';
 /** Keep in sync with --titlebar-height in the renderer stylesheet. */
 export const TITLE_BAR_HEIGHT = 35;
 
+const DEFAULT_SIZE = { width: 1280, height: 860 };
+
 const ZOOM_STEP = 0.5;
 const ZOOM_MIN = -3;
 const ZOOM_MAX = 5;
@@ -56,6 +58,8 @@ export interface ShellWindowOptions {
   readonly preloadPath: string;
   readonly logger: ILogger;
   readonly openDevTools: boolean;
+  /** Place the window on a non-primary display (`--secondary-display`). */
+  readonly secondaryDisplay: boolean;
   readonly state: WindowState;
   readonly openExternal: (url: string) => void;
 }
@@ -104,6 +108,23 @@ function visibleBounds(bounds: Rectangle | undefined): Rectangle | undefined {
   return overlapX > 200 && overlapY > 100 ? bounds : undefined;
 }
 
+/** The size centred on the first non-primary display; undefined when there is only one. */
+function onSecondaryDisplay(size: { width: number; height: number }): Rectangle | undefined {
+  const primary = screen.getPrimaryDisplay().id;
+  const area = screen.getAllDisplays().find((display) => display.id !== primary)?.workArea;
+  if (!area) {
+    return undefined;
+  }
+  const width = Math.min(size.width, area.width);
+  const height = Math.min(size.height, area.height);
+  return {
+    x: area.x + Math.round((area.width - width) / 2),
+    y: area.y + Math.round((area.height - height) / 2),
+    width,
+    height,
+  };
+}
+
 export class ShellWindow extends Disposable {
   readonly window: BrowserWindow;
   private interceptedChords = new Set<string>();
@@ -116,9 +137,10 @@ export class ShellWindow extends Disposable {
   constructor(private readonly options: ShellWindowOptions) {
     super();
     this.theme = options.theme;
-    const bounds = visibleBounds(options.state.bounds);
+    const saved = visibleBounds(options.state.bounds);
+    const bounds = options.secondaryDisplay ? (onSecondaryDisplay(saved ?? DEFAULT_SIZE) ?? saved) : saved;
     this.window = new BrowserWindow({
-      ...(bounds ?? { width: 1280, height: 860 }),
+      ...(bounds ?? DEFAULT_SIZE),
       minWidth: 640,
       minHeight: 400,
       show: false,

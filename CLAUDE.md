@@ -29,7 +29,7 @@ run-dev.cmd          # 在资源管理器里双击：构建并启动（手动试
 - **视觉**：直角、1px 分隔线、颜色只用 `var(--vscode-*)`，不要圆角卡片、渐变、留白多的"AI 风"。
 - **界面文字**：代码里只写英文，放在模块目录的 `messages.ts` 里（`platform/nls.ts` 的 `defineMessages('<命名空间>', {...})`，命名空间不能重名）。中文放进语言包 `src/nls/zh-cn.json`，可以晚点批量补：`npm run nls -- --todo` 导出待翻译的条目，译好合并进去，再 `npm run nls -- --sort` 排好序。术语规范见 `docs/design.md` 的"文案"。日志不翻译。
 - **代码**：TypeScript strict，注释用英文，写在行为不直观的地方。文档用中文，术语带英文。
-- **测试实例**要用临时数据目录（`--user-data-dir .test-data/...`）和临时工作区。绝不在测试实例里打开正在进行中的会话（会话列表里带绿点、标着"now"的那条），那会起第二个 claude 进程续写同一个会话。
+- **测试实例**要用临时数据目录（`--user-data-dir .test-data/...`）和临时工作区，并加 `--secondary-display`（有第二块显示器时窗口开在那块上，不挡主屏）。绝不在测试实例里打开正在进行中的会话（会话列表里带绿点、标着"now"的那条），那会起第二个 claude 进程续写同一个会话。
 - **提交**：Conventional Commits，每完成一步提交一次。git 在 `C:\Program Files\Git\cmd\git.exe`；老会话的 PATH 里可能还没有 git，就用全路径。
 - **推送**：远程 `origin` 是 GitHub 上的 `Teabie666/ccshell-based-on-codium-addon`，目前只做备份，不用于协作。需要时就推，大一点的改动可以开分支；不 force push。
 

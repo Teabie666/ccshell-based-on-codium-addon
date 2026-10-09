@@ -92,7 +92,8 @@ async function step(name, fn) {
 
 const app = await electron.launch({
   executablePath: electronPath,
-  args: ['.', '--user-data-dir', dataDir, '--folder', workspace],
+  // On a second monitor, if there is one, out of the way of whoever started the run.
+  args: ['.', '--user-data-dir', dataDir, '--folder', workspace, '--secondary-display'],
   cwd: root,
   env,
   timeout: 60_000,

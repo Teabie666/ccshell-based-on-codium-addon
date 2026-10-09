@@ -22,7 +22,7 @@ npm run capture-themes   # 从本机 VSCodium 重新抓取内置主题到 resour
 启动参数（M4 会补全）：
 
 ```
-electron . [文件夹] [--folder <dir>] [--extension-dir <dir>] [--user-data-dir <dir>] [--theme <id>] [--log-level <lv>] [--devtools]
+electron . [文件夹] [--folder <dir>] [--extension-dir <dir>] [--user-data-dir <dir>] [--theme <id>] [--log-level <lv>] [--devtools] [--secondary-display]
 ```
 
 界面语言（英文 / 简体中文）：命令面板里的"配置显示语言"（Configure Display Language），或者在 settings.json 里设 `"ccshell.language"`：`"auto"`（默认，跟随系统）、`"zh-cn"`、`"en"`，重启后生效。

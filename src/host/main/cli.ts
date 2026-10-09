@@ -13,6 +13,8 @@ export interface CliArgs {
   readonly logLevel?: string;
   readonly theme?: string;
   readonly devtools: boolean;
+  /** Open the window on a display other than the primary one, if there is one (tests do). */
+  readonly secondaryDisplay: boolean;
 }
 
 /**
@@ -31,6 +33,7 @@ export function parseCliArgs(argv: readonly string[]): CliArgs {
       'log-level': { type: 'string' },
       theme: { type: 'string' },
       devtools: { type: 'boolean' },
+      'secondary-display': { type: 'boolean' },
     },
   });
   const str = (value: unknown): string | undefined =>
@@ -44,5 +47,6 @@ export function parseCliArgs(argv: readonly string[]): CliArgs {
     logLevel: str(values['log-level']),
     theme: str(values.theme),
     devtools: values.devtools === true,
+    secondaryDisplay: values['secondary-display'] === true,
   };
 }

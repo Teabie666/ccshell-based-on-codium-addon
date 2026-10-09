@@ -135,7 +135,7 @@ M2 试用后加的。原来 PLAN 砍掉了设置图形界面，改为图形界�
 
 CLI 和窗口
 
-- [x] 已有的参数：`[folder]` / `--folder`、`--extension-dir`、`--user-data-dir`、`--theme`、`--log-level`、`--devtools`
+- [x] 已有的参数：`[folder]` / `--folder`、`--extension-dir`、`--user-data-dir`、`--theme`、`--log-level`、`--devtools`、`--secondary-display`（窗口开在非主显示器上，测试用）
 - [ ] 补齐：`--provider`、`--new-window`、`--session`、`--prompt`、`--goto <file:line>`、`--settings`、`--version`、`--help`
 - [ ] 单实例：第二次启动时，参数转发给已经在运行的实例
 - [ ] 标题栏「文件夹 ▾」：切换或打开别的文件夹（开新窗口）；bridge 拦截插件的 `open_folder*`，改走壳的文件夹选择 / 新窗口

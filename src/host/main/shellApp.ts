@@ -149,6 +149,7 @@ export class ShellApp extends Disposable {
       preloadPath: path.join(this.env.appDir, 'preload.js'),
       logger: this.logger.child('window'),
       openDevTools: this.env.args.devtools,
+      secondaryDisplay: this.env.args.secondaryDisplay,
       state: (this.globalState.get(WINDOW_STATE_KEY) as WindowState | undefined) ?? {},
       openExternal: (url) => void this.openExternal(url),
     });
