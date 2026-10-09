@@ -26,16 +26,20 @@ export interface DiffInputData {
 }
 
 export class DiffEditorPane implements EditorPane {
-  readonly editor: DiffEditor;
+  editor: DiffEditor;
   private readonly original: ModelReference;
   private readonly modified: ModelReference;
   private readonly disposables = new DisposableStore();
+  /** What belongs to the current Monaco widget; recreated when the pane moves. */
+  private readonly editorDisposables = new DisposableStore();
+  private toolbar: HTMLElement | undefined;
+  private body: HTMLElement;
 
   constructor(
     private readonly monaco: MonacoApi,
     container: HTMLElement,
     private readonly data: DiffInputData,
-    host: EditorHost,
+    private readonly host: EditorHost,
     private readonly models: TextModels,
     private readonly connection: ExtensionHostConnection,
     private readonly dialogs: Dialogs,
@@ -43,15 +47,42 @@ export class DiffEditorPane implements EditorPane {
   ) {
     this.original = models.acquire(data.original);
     this.modified = models.acquire(data.modified);
-    container.classList.add('text-editor-container');
-    if (data.actions.length > 0) {
-      container.appendChild(this.createToolbar(data.actions));
+    this.body = this.createLayout(container);
+    this.editor = this.createEditor();
+    const entry = this.modified.entry;
+    host.setDirty(entry.isDirty);
+    this.disposables.add(entry.onDidChangeDirty((dirty) => host.setDirty(dirty)));
+    this.disposables.add(this.editorDisposables);
+  }
+
+  /** A new Monaco diff widget in `container` (e.g. another window's), same models. */
+  relocate(container: HTMLElement): void {
+    const viewState = this.editor.saveViewState();
+    this.editorDisposables.clear();
+    this.editor.dispose();
+    this.toolbar?.remove();
+    this.body.remove();
+    this.body = this.createLayout(container);
+    this.editor = this.createEditor();
+    if (viewState) {
+      this.editor.restoreViewState(viewState);
     }
-    const body = document.createElement('div');
+  }
+
+  private createLayout(container: HTMLElement): HTMLElement {
+    container.classList.add('text-editor-container');
+    if (this.data.actions.length > 0) {
+      this.toolbar = this.createToolbar(container.ownerDocument, this.data.actions);
+      container.appendChild(this.toolbar);
+    }
+    const body = container.ownerDocument.createElement('div');
     body.className = 'editor-body';
     container.appendChild(body);
+    return body;
+  }
 
-    this.editor = monaco.editor.createDiffEditor(body, {
+  private createEditor(): DiffEditor {
+    const editor = this.monaco.editor.createDiffEditor(this.body, {
       automaticLayout: true,
       ...editorFontOptions(),
       originalEditable: false,
@@ -62,22 +93,19 @@ export class DiffEditorPane implements EditorPane {
       scrollBeyondLastLine: false,
       fixedOverflowWidgets: true,
     });
-    this.editor.setModel({ original: this.original.entry.model, modified: this.modified.entry.model });
-
-    const entry = this.modified.entry;
-    host.setDirty(entry.isDirty);
-    this.disposables.add(entry.onDidChangeDirty((dirty) => host.setDirty(dirty)));
-    const modifiedEditor = this.editor.getModifiedEditor();
-    this.disposables.add(
+    editor.setModel({ original: this.original.entry.model, modified: this.modified.entry.model });
+    const modifiedEditor = editor.getModifiedEditor();
+    this.editorDisposables.add(
       modifiedEditor.onDidChangeCursorSelection(() => {
-        connection.rpc?.notify('editor.didChangeSelection', {
-          editorId: data.modifiedEditorId,
+        this.connection.rpc?.notify('editor.didChangeSelection', {
+          editorId: this.data.modifiedEditorId,
           selections: (modifiedEditor.getSelections() ?? []).map(selectionToDto),
         });
       }),
     );
-    this.disposables.add(modifiedEditor.onDidFocusEditorText(() => host.activate()));
-    this.disposables.add(this.editor.getOriginalEditor().onDidFocusEditorText(() => host.activate()));
+    this.editorDisposables.add(modifiedEditor.onDidFocusEditorText(() => this.host.activate()));
+    this.editorDisposables.add(editor.getOriginalEditor().onDidFocusEditorText(() => this.host.activate()));
+    return editor;
   }
 
   /** The modified side takes input; both sides count as visible, like VS Code's diff editor. */
@@ -140,15 +168,15 @@ export class DiffEditorPane implements EditorPane {
     this.connection.rpc?.notify('tab.didClose', { tabId: this.data.tabId });
   }
 
-  private createToolbar(actions: readonly DiffActionDto[]): HTMLElement {
-    const toolbar = document.createElement('div');
+  private createToolbar(doc: Document, actions: readonly DiffActionDto[]): HTMLElement {
+    const toolbar = doc.createElement('div');
     toolbar.className = 'diff-toolbar';
-    const hint = document.createElement('span');
+    const hint = doc.createElement('span');
     hint.className = 'diff-toolbar-hint';
     hint.textContent = t('proposedChanges');
     toolbar.appendChild(hint);
     for (const action of actions) {
-      const button = document.createElement('button');
+      const button = doc.createElement('button');
       button.className = action.kind === 'accept' ? 'button' : 'button secondary';
       button.dataset.action = action.kind;
       button.textContent = action.kind === 'accept' ? t('accept') : t('reject');

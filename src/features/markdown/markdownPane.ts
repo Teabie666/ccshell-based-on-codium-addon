@@ -47,6 +47,7 @@ export class MarkdownPane implements EditorPane {
   private readonly preview: HTMLElement;
   private readonly sourceContainer: HTMLElement;
   private readonly toggle: HTMLButtonElement;
+  private readonly toolbar: HTMLElement;
   private readonly disposables = new DisposableStore();
   private readonly textEditorsEmitter = new Emitter<void>();
   readonly onDidChangeTextEditors = this.textEditorsEmitter.event;
@@ -64,6 +65,7 @@ export class MarkdownPane implements EditorPane {
     container.classList.add('text-editor-container');
     const toolbar = document.createElement('div');
     toolbar.className = 'editor-toolbar';
+    this.toolbar = toolbar;
     const spacer = document.createElement('span');
     spacer.className = 'editor-toolbar-spacer';
     this.toggle = document.createElement('button');
@@ -110,6 +112,13 @@ export class MarkdownPane implements EditorPane {
   refresh(): void {
     this.renderedVersion = -1;
     this.scheduleRender();
+  }
+
+  /** Moves the preview (plain DOM) and the source editor (a new Monaco widget) into `container`. */
+  relocate(container: HTMLElement): void {
+    container.classList.add('text-editor-container');
+    container.append(this.toolbar, this.preview, this.sourceContainer);
+    this.source.relocate(this.sourceContainer);
   }
 
   layout(): void {

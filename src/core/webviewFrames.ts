@@ -5,6 +5,7 @@
  */
 
 import { Emitter, type Event } from '../platform/event';
+import { toDisposable, type IDisposable } from '../platform/lifecycle';
 import type { ILogger } from '../platform/log';
 import type {
   FindDirection,
@@ -38,38 +39,21 @@ export interface WebviewInfo {
 }
 
 class WebviewFrame {
-  readonly iframe: HTMLIFrameElement;
+  iframe: HTMLIFrameElement;
   private loaded = false;
   private loadedOnce = false;
   private queue: unknown[] = [];
   private origin = '*';
+  private url: string | undefined;
 
   constructor(
     readonly webviewId: string,
     readonly viewType: string,
     container: HTMLElement,
-    title: string,
+    private readonly title: string,
     private readonly onLoad: () => void,
   ) {
-    this.iframe = document.createElement('iframe');
-    this.iframe.className = 'webview-frame';
-    this.iframe.title = title;
-    this.iframe.setAttribute('sandbox', SANDBOX);
-    this.iframe.setAttribute('allow', 'clipboard-read; clipboard-write; autoplay');
-    this.iframe.addEventListener('load', () => {
-      if (!this.iframe.src) {
-        return;
-      }
-      this.loaded = true;
-      this.loadedOnce = true;
-      const pending = this.queue;
-      this.queue = [];
-      for (const message of pending) {
-        this.deliver(message);
-      }
-      this.onLoad();
-    });
-    container.appendChild(this.iframe);
+    this.iframe = this.createIframe(container);
   }
 
   get contentWindow(): Window | null {
@@ -82,8 +66,46 @@ class WebviewFrame {
       // Messages meant for the previous document are dropped, like VS Code does.
       this.queue = [];
     }
+    this.url = url;
     this.origin = new URL(url).origin;
     this.iframe.src = url;
+  }
+
+  /**
+   * Shows the webview in another container, possibly in another window. An iframe that
+   * moves reloads anyway, so this makes a new one on the same document; the page starts
+   * over (with its last saved state), as when VS Code moves a webview.
+   */
+  relocate(container: HTMLElement): void {
+    const previous = this.iframe;
+    this.iframe = this.createIframe(container);
+    previous.remove();
+    if (this.url) {
+      this.load(this.url);
+    }
+  }
+
+  private createIframe(container: HTMLElement): HTMLIFrameElement {
+    const iframe = container.ownerDocument.createElement('iframe');
+    iframe.className = 'webview-frame';
+    iframe.title = this.title;
+    iframe.setAttribute('sandbox', SANDBOX);
+    iframe.setAttribute('allow', 'clipboard-read; clipboard-write; autoplay');
+    iframe.addEventListener('load', () => {
+      if (!iframe.src || iframe !== this.iframe) {
+        return;
+      }
+      this.loaded = true;
+      this.loadedOnce = true;
+      const pending = this.queue;
+      this.queue = [];
+      for (const message of pending) {
+        this.deliver(message);
+      }
+      this.onLoad();
+    });
+    container.appendChild(iframe);
+    return iframe;
   }
 
   post(message: unknown): void {
@@ -127,6 +149,18 @@ export class WebviewFrames {
     private readonly logger: ILogger,
   ) {
     window.addEventListener('message', (event) => this.onWindowMessage(event));
+  }
+
+  /** Webviews shown in another window post to that window; listen there too. */
+  watchWindow(target: Window): IDisposable {
+    const listener = (event: MessageEvent): void => this.onWindowMessage(event, target);
+    target.addEventListener('message', listener);
+    return toDisposable(() => target.removeEventListener('message', listener));
+  }
+
+  /** Moves a webview to another container (e.g. into an auxiliary window); its page reloads. */
+  relocate(webviewId: string, container: HTMLElement): void {
+    this.get(webviewId)?.relocate(container);
   }
 
   create(webviewId: string, viewType: string, container: HTMLElement, title: string): void {
@@ -208,8 +242,8 @@ export class WebviewFrames {
     return frame;
   }
 
-  private onWindowMessage(event: MessageEvent): void {
-    if (!event.source || event.source === window) {
+  private onWindowMessage(event: MessageEvent, receiver: Window = window): void {
+    if (!event.source || event.source === receiver) {
       return;
     }
     const frame = [...this.frames.values()].find((f) => f.contentWindow === event.source);

@@ -93,13 +93,14 @@ export class TextEditorService {
     return this.panes.get(editorId);
   }
 
+  /** The text editor commands act on (a floating tab's when its window has focus). */
   get activePane(): TextEditorPane | undefined {
-    const pane = this.contentPane.active?.pane;
+    const pane = this.contentPane.current?.pane;
     return pane instanceof TextEditorPane ? pane : undefined;
   }
 
   get activeDiff(): DiffEditorPane | undefined {
-    const pane = this.contentPane.active?.pane;
+    const pane = this.contentPane.current?.pane;
     return pane instanceof DiffEditorPane ? pane : undefined;
   }
 
@@ -227,22 +228,26 @@ export const ITextEditors = createServiceId<TextEditorService>('textEditors');
 /** Reports which editors the user sees, and which content tab is active, to the extension host. */
 function trackVisibleEditors(connection: ExtensionHostConnection, contentPane: ContentPane, layout: Layout): () => void {
   let last = '';
+  let lastTab: string | undefined;
   return () => {
     const rpc = connection.rpc;
     if (!rpc) {
       return;
     }
-    const pane = contentPane.active?.pane;
-    const visible = layout.contentPaneVisible && pane?.textEditorIds ? [...pane.textEditorIds] : [];
+    // What has focus first, then the pane's active tab (while shown), then the tabs in their own windows.
+    const shown = [contentPane.current, layout.contentPaneVisible ? contentPane.active : undefined, ...contentPane.floating];
+    const visible = [...new Set(shown.flatMap((tab) => tab?.pane.textEditorIds ?? []))];
     const key = visible.join(',');
     if (key !== last) {
       last = key;
       rpc.notify('editor.didChangeVisible', { active: visible[0], visible });
     }
-    const data = contentPane.active?.input.data as { tabId?: unknown } | undefined;
-    if (typeof data?.tabId === 'string') {
-      rpc.notify('tab.didActivate', { tabId: data.tabId });
+    const data = contentPane.current?.input.data as { tabId?: unknown } | undefined;
+    const tabId = typeof data?.tabId === 'string' ? data.tabId : undefined;
+    if (tabId && tabId !== lastTab) {
+      rpc.notify('tab.didActivate', { tabId });
     }
+    lastTab = tabId;
   };
 }
 
@@ -305,13 +310,16 @@ export const editorModule: ShellModule = {
       }),
     );
     subscriptions.add(layout.onDidChangeContentPaneVisibility(report));
+    subscriptions.add(contentPane.onDidChangeFocus(report));
+    subscriptions.add(contentPane.onDidChangeFloating(report));
 
     const updateContext = (): void => {
       contextKeys.set('activeEditorIsText', editors.activeDocument !== undefined);
       contextKeys.set('activeEditorIsDiff', editors.activeDiff !== undefined);
-      contextKeys.set('editorTextFocus', document.activeElement?.closest('.monaco-editor') != null);
+      contextKeys.set('editorTextFocus', contentPane.focusedDocument.activeElement?.closest('.monaco-editor') != null);
     };
     subscriptions.add(contentPane.onDidChangeActive(updateContext));
+    subscriptions.add(contentPane.onDidChangeFocus(() => setTimeout(updateContext)));
     const onFocus = (): void => {
       setTimeout(updateContext);
     };

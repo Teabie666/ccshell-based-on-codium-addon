@@ -451,6 +451,12 @@ export interface MainEventMessage<K extends keyof MainEventsForRenderer = keyof 
   readonly payload: MainEventsForRenderer[K];
 }
 
+/**
+ * `window.open('about:blank', name)` with a name starting with this opens an auxiliary
+ * window: a content pane tab moved out of the main window (main allows only these).
+ */
+export const AUX_WINDOW_NAME_PREFIX = 'ccshell-aux-';
+
 /** IPC channel names used by the preload bridge. */
 export const IpcChannel = {
   /** renderer -> main request/response, carries an RPC envelope. */

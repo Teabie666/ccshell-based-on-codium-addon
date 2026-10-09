@@ -8,18 +8,21 @@
 import {
   BrowserWindow,
   clipboard,
+  type BrowserWindowConstructorOptions,
   Menu,
   Notification,
   screen,
   type MenuItemConstructorOptions,
   type MessagePortMain,
   type Rectangle,
+  type WebContents,
   type WebFrameMain,
 } from 'electron';
 import { chordFromInput } from '../../platform/keybindings';
 import { Disposable } from '../../platform/lifecycle';
 import type { ILogger } from '../../platform/log';
 import {
+  AUX_WINDOW_NAME_PREFIX,
   IpcChannel,
   type ContextMenuItemDto,
   type MainEventsForRenderer,
@@ -106,9 +109,13 @@ export class ShellWindow extends Disposable {
   private interceptedChords = new Set<string>();
   /** Extra right-click menu items per webview id, as the renderer registered them. */
   private readonly webviewMenus = new Map<string, readonly (readonly ContextMenuItemDto[])[]>();
+  /** Content pane tabs moved into windows of their own; the main window's page drives them. */
+  private readonly auxWindows = new Set<BrowserWindow>();
+  private theme: ThemeData;
 
   constructor(private readonly options: ShellWindowOptions) {
     super();
+    this.theme = options.theme;
     const bounds = visibleBounds(options.state.bounds);
     this.window = new BrowserWindow({
       ...(bounds ?? { width: 1280, height: 860 }),
@@ -144,6 +151,15 @@ export class ShellWindow extends Disposable {
       }
     });
     this.window.on('focus', () => this.window.flashFrame(false));
+    // Auxiliary windows run on the main page's scripts: they cannot outlive it, and their
+    // close handlers must not hold up quitting.
+    this.window.on('closed', () => this.destroyAuxWindows());
+    this.window.webContents.on('did-navigate', () => this.destroyAuxWindows());
+  }
+
+  override dispose(): void {
+    this.destroyAuxWindows();
+    super.dispose();
   }
 
   load(): Promise<void> {
@@ -169,8 +185,11 @@ export class ShellWindow extends Disposable {
   }
 
   setTheme(theme: ThemeData): void {
-    this.window.setBackgroundColor(theme.variables['vscode-editor-background'] ?? '#1f1f1f');
-    this.window.setTitleBarOverlay(overlayColors(theme));
+    this.theme = theme;
+    for (const window of [this.window, ...this.auxWindows]) {
+      window.setBackgroundColor(theme.variables['vscode-editor-background'] ?? '#1f1f1f');
+      window.setTitleBarOverlay(overlayColors(theme));
+    }
   }
 
   setInterceptedChords(chords: readonly string[]): void {
@@ -190,6 +209,9 @@ export class ShellWindow extends Disposable {
     const contents = this.window.webContents;
     const level = delta === 0 ? 0 : Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, contents.getZoomLevel() + delta * ZOOM_STEP));
     contents.setZoomLevel(level);
+    for (const aux of this.auxWindows) {
+      aux.webContents.setZoomLevel(level);
+    }
     return level;
   }
 
@@ -213,19 +235,24 @@ export class ShellWindow extends Disposable {
 
   private installGuards(): void {
     const contents = this.window.webContents;
-    const { logger, openExternal } = this.options;
+    const { openExternal } = this.options;
 
     contents.session.setPermissionRequestHandler((_wc, permission, callback) => {
       callback(ALLOWED_PERMISSIONS.has(permission));
     });
     contents.session.setPermissionCheckHandler((_wc, permission) => ALLOWED_PERMISSIONS.has(permission));
 
-    contents.setWindowOpenHandler(({ url }) => {
+    contents.setWindowOpenHandler(({ url, frameName }) => {
+      // The content pane opens tabs into auxiliary windows: blank pages it fills itself.
+      if (url === 'about:blank' && frameName.startsWith(AUX_WINDOW_NAME_PREFIX)) {
+        return { action: 'allow', overrideBrowserWindowOptions: this.auxWindowOptions() };
+      }
       if (isExternalUrl(url)) {
         openExternal(url);
       }
       return { action: 'deny' };
     });
+    contents.on('did-create-window', (child) => this.adoptAuxWindow(child));
 
     contents.on('will-navigate', (event, url) => {
       if (url !== contents.getURL()) {
@@ -235,6 +262,61 @@ export class ShellWindow extends Disposable {
         }
       }
     });
+
+    this.installContentGuards(contents, this.window);
+
+    // A reloaded renderer recreates its webviews under new ids.
+    contents.on('did-navigate', () => this.webviewMenus.clear());
+  }
+
+  private auxWindowOptions(): BrowserWindowConstructorOptions {
+    return {
+      minWidth: 400,
+      minHeight: 300,
+      backgroundColor: this.theme.variables['vscode-editor-background'] ?? '#1f1f1f',
+      titleBarStyle: 'hidden',
+      titleBarOverlay: overlayColors(this.theme),
+      autoHideMenuBar: true,
+    };
+  }
+
+  private adoptAuxWindow(child: BrowserWindow): void {
+    this.auxWindows.add(child);
+    child.on('closed', () => this.auxWindows.delete(child));
+    const contents = child.webContents;
+    contents.setZoomLevel(this.window.webContents.getZoomLevel());
+    // The page is written by the main window's scripts; it never navigates on its own.
+    contents.on('will-navigate', (event, url) => {
+      event.preventDefault();
+      if (isExternalUrl(url)) {
+        this.options.openExternal(url);
+      }
+    });
+    contents.setWindowOpenHandler(({ url }) => {
+      if (isExternalUrl(url)) {
+        this.options.openExternal(url);
+      }
+      return { action: 'deny' };
+    });
+    this.installContentGuards(contents, child);
+  }
+
+  private destroyAuxWindows(): void {
+    for (const aux of [...this.auxWindows]) {
+      if (!aux.isDestroyed()) {
+        aux.destroy();
+      }
+    }
+    this.auxWindows.clear();
+  }
+
+  /**
+   * What every page of this window gets, the main one and auxiliary ones: webview frames
+   * kept on their documents, intercepted keybindings (dispatched by the main page), the
+   * context menu.
+   */
+  private installContentGuards(contents: WebContents, popupWindow: BrowserWindow): void {
+    const { logger, openExternal } = this.options;
 
     // Webview iframes may only ever show their own ccw:// document.
     contents.on('will-frame-navigate', (event) => {
@@ -318,11 +400,8 @@ export class ShellWindow extends Disposable {
         }
       }
       if (template.length > 0) {
-        Menu.buildFromTemplate(template).popup({ window: this.window });
+        Menu.buildFromTemplate(template).popup({ window: popupWindow });
       }
     });
-
-    // A reloaded renderer recreates its webviews under new ids.
-    contents.on('did-navigate', () => this.webviewMenus.clear());
   }
 }

@@ -1,13 +1,16 @@
 /**
  * The content pane: a tab strip and one editor per tab, right of the conversation. Which
  * editor shows a tab comes from the core editor registry; this class only manages tabs:
- * opening (with VS Code's preview tabs), activating, dirty markers and closing.
+ * opening (with VS Code's preview tabs), activating, dirty markers, closing, and moving a
+ * tab into a window of its own (an auxiliary window) and back.
  */
 
 import { Emitter, type Event } from '../../platform/event';
+import { DisposableStore, type IDisposable } from '../../platform/lifecycle';
 import type { ILogger } from '../../platform/log';
 import type { EditorHost, EditorInput, EditorPane, EditorRegistry } from '../../core/editors';
 import type { Layout } from '../../core/layout';
+import { AuxWindow } from './auxWindow';
 import { t } from './messages';
 
 export interface OpenOptions {
@@ -24,54 +27,77 @@ export interface ContentTab {
   readonly pane: EditorPane;
   readonly isPreview: boolean;
   readonly isDirty: boolean;
+  /** Shown in a window of its own rather than in the content pane. */
+  readonly isFloating: boolean;
 }
 
 interface TabEntry extends ContentTab {
   readonly element: HTMLElement;
-  readonly container: HTMLElement;
+  container: HTMLElement;
   isPreview: boolean;
   isDirty: boolean;
   closing: boolean;
+  aux: AuxWindow | undefined;
+  readonly auxSubscriptions: DisposableStore;
+}
+
+export interface ContentPaneOptions {
+  /** Called for each auxiliary window, e.g. to receive messages of webviews shown in it. */
+  readonly watchWindow?: (target: Window) => IDisposable;
 }
 
 export class ContentPane {
+  /** Right of the tab strip: buttons for the active tab (e.g. move into a new window). */
+  readonly actions: HTMLElement;
   private readonly strip: HTMLElement;
   private readonly body: HTMLElement;
   private readonly empty: HTMLElement;
   private readonly entries = new Map<string, TabEntry>();
-  /** Most recently active first; picks the next tab when one closes. */
+  /** Most recently active first (tabs in the pane); picks the next tab when one closes. */
   private history: string[] = [];
   private activeId: string | undefined;
+  /** The floating tab whose window has focus. */
+  private focusedFloating: TabEntry | undefined;
   private readonly activeEmitter = new Emitter<ContentTab | undefined>();
   readonly onDidChangeActive: Event<ContentTab | undefined> = this.activeEmitter.event;
   private readonly closeEmitter = new Emitter<ContentTab>();
   readonly onDidClose: Event<ContentTab> = this.closeEmitter.event;
   private readonly focusEmitter = new Emitter<boolean>();
+  /** Focus entered or left the pane or a tab's own window. */
   readonly onDidChangeFocus: Event<boolean> = this.focusEmitter.event;
+  private readonly floatingEmitter = new Emitter<void>();
+  /** A tab moved into a window of its own, or back. */
+  readonly onDidChangeFloating: Event<void> = this.floatingEmitter.event;
   private focused = false;
 
   constructor(
     private readonly layout: Layout,
     private readonly editors: EditorRegistry,
     private readonly logger: ILogger,
+    private readonly options: ContentPaneOptions = {},
   ) {
     const root = layout.contentPane;
     this.strip = document.createElement('div');
     this.strip.className = 'content-tabs';
     this.strip.setAttribute('role', 'tablist');
     this.strip.setAttribute('aria-label', t('openEditors'));
+    this.actions = document.createElement('div');
+    this.actions.className = 'content-actions';
+    const header = document.createElement('div');
+    header.className = 'content-header';
+    header.append(this.strip, this.actions);
     this.body = document.createElement('div');
     this.body.className = 'content-body';
     this.empty = createEmptyState();
     this.body.appendChild(this.empty);
-    root.append(this.strip, this.body);
+    root.append(header, this.body);
 
     // Focus inside the pane, including into a webview iframe (the iframe element gets focus).
     const updateFocus = (): void => {
       const focused = root.contains(document.activeElement);
       if (focused !== this.focused) {
         this.focused = focused;
-        this.focusEmitter.fire(focused);
+        this.focusEmitter.fire(this.hasFocus);
       }
     };
     root.addEventListener('focusin', updateFocus);
@@ -86,16 +112,32 @@ export class ContentPane {
     });
   }
 
+  /** The active tab of the pane itself. */
   get active(): ContentTab | undefined {
     return this.activeId ? this.entries.get(this.activeId) : undefined;
   }
 
+  /** What commands act on: the floating tab whose window has focus, else the pane's active tab. */
+  get current(): ContentTab | undefined {
+    return this.focusedFloating ?? this.active;
+  }
+
+  /** Every tab: the pane's in strip order, then the floating ones. */
   get tabs(): readonly ContentTab[] {
-    return this.ordered();
+    return [...this.ordered(), ...this.floating];
+  }
+
+  get floating(): readonly ContentTab[] {
+    return [...this.entries.values()].filter((entry) => entry.aux !== undefined);
   }
 
   get hasFocus(): boolean {
-    return this.focused;
+    return this.focused || this.focusedFloating !== undefined;
+  }
+
+  /** The document that has focus: a floating tab's window's, else the main one. */
+  get focusedDocument(): Document {
+    return this.focusedFloating?.aux?.document ?? document;
   }
 
   get(inputId: string): ContentTab | undefined {
@@ -109,7 +151,11 @@ export class ContentPane {
       if (options.preview === false) {
         this.pin(existing);
       }
-      if (options.activate !== false || this.activeId === undefined) {
+      if (existing.aux) {
+        if (!options.preserveFocus) {
+          existing.aux.window.focus();
+        }
+      } else if (options.activate !== false || this.activeId === undefined) {
         this.layout.setContentPaneVisible(true);
         this.activate(existing, !options.preserveFocus);
       }
@@ -121,15 +167,12 @@ export class ContentPane {
       return undefined;
     }
     if (options.preview) {
-      const replaced = [...this.entries.values()].find((entry) => entry.isPreview && !entry.isDirty);
+      const replaced = this.ordered().find((entry) => entry.isPreview && !entry.isDirty);
       if (replaced) {
         this.remove(replaced);
       }
     }
-    const container = document.createElement('div');
-    container.className = 'content-editor';
-    container.hidden = true;
-    this.body.appendChild(container);
+    const container = this.createContainer();
     const element = this.createTabElement(input);
     // Editors may call their host only once the tab exists.
     let entry: TabEntry | undefined;
@@ -137,7 +180,7 @@ export class ContentPane {
       setDirty: (dirty) => entry && this.setDirty(entry, dirty),
       pin: () => entry && this.pin(entry),
       close: () => void this.close(input.id),
-      activate: () => entry && this.entries.has(input.id) && this.activate(entry, false),
+      activate: () => entry && this.entries.has(input.id) && !entry.aux && this.activate(entry, false),
     };
     let pane: EditorPane;
     try {
@@ -147,7 +190,20 @@ export class ContentPane {
       container.remove();
       return undefined;
     }
-    entry = { input, pane, element, container, isPreview: options.preview === true, isDirty: false, closing: false };
+    entry = {
+      input,
+      pane,
+      element,
+      container,
+      isPreview: options.preview === true,
+      isDirty: false,
+      closing: false,
+      aux: undefined,
+      auxSubscriptions: new DisposableStore(),
+      get isFloating() {
+        return this.aux !== undefined;
+      },
+    };
     element.classList.toggle('preview', entry.isPreview);
     // A new tab goes right of the active one, like VS Code.
     const activeElement = this.activeId ? this.entries.get(this.activeId)?.element : undefined;
@@ -160,7 +216,7 @@ export class ContentPane {
   }
 
   /** Asks the tab's editor (unsaved changes...) and closes the tab. Resolves to whether it closed. */
-  async close(inputId: string | undefined = this.activeId): Promise<boolean> {
+  async close(inputId: string | undefined = this.current?.input.id): Promise<boolean> {
     const entry = inputId ? this.entries.get(inputId) : undefined;
     if (!entry || entry.closing) {
       return false;
@@ -185,6 +241,7 @@ export class ContentPane {
     if (!entry || this.entries.get(entry.input.id) !== entry) {
       return;
     }
+    const inPane = entry.aux === undefined;
     const wasActive = this.activeId === entry.input.id;
     const hadFocus = this.focused;
     this.entries.delete(entry.input.id);
@@ -195,7 +252,11 @@ export class ContentPane {
     } catch (error) {
       this.logger.error(`disposing the editor of ${entry.input.id} failed`, error);
     }
-    entry.container.remove();
+    if (inPane) {
+      entry.container.remove();
+    } else {
+      this.detachWindow(entry)?.close();
+    }
     if (wasActive) {
       this.activeId = undefined;
       const next = this.history[0] ? this.entries.get(this.history[0]) : undefined;
@@ -206,11 +267,78 @@ export class ContentPane {
       }
     }
     this.closeEmitter.fire(entry);
-    if (this.entries.size === 0) {
-      this.empty.hidden = false;
-      // The pane shows while it has something to show.
-      this.layout.setContentPaneVisible(false);
+    this.updatePaneVisibility();
+  }
+
+  /** Whether the tab's editor can move into a window of its own. */
+  canPopOut(inputId: string | undefined = this.activeId): boolean {
+    const entry = inputId ? this.entries.get(inputId) : undefined;
+    return entry !== undefined && entry.aux === undefined && entry.pane.relocate !== undefined;
+  }
+
+  /** Moves a tab of the pane into a window of its own. */
+  popOut(inputId: string | undefined = this.activeId): boolean {
+    const entry = inputId ? this.entries.get(inputId) : undefined;
+    if (!entry || entry.aux || !entry.pane.relocate) {
+      return false;
     }
+    const rect = this.layout.contentPane.getBoundingClientRect();
+    const aux = AuxWindow.open(String(Date.now()), entry.input.label, {
+      left: window.screenX + Math.max(0, rect.left) + 24,
+      top: window.screenY + 24,
+      width: Math.max(480, rect.width || window.outerWidth / 2),
+      height: Math.max(360, window.outerHeight - 48),
+    });
+    if (!aux) {
+      this.logger.warn(`could not open a window for ${entry.input.id}`);
+      return false;
+    }
+    const wasActive = this.activeId === entry.input.id;
+    this.pin(entry);
+    entry.aux = aux;
+    entry.element.remove();
+    entry.pane.relocate(aux.body);
+    entry.container.remove();
+    entry.container = aux.body;
+    entry.pane.setVisible(true);
+    entry.pane.layout();
+    aux.setDirty(entry.isDirty);
+    this.attachWindow(entry, aux);
+
+    this.history = this.history.filter((id) => id !== entry.input.id);
+    if (wasActive) {
+      this.activeId = undefined;
+      const next = this.history[0] ? this.entries.get(this.history[0]) : undefined;
+      if (next) {
+        this.activate(next, false);
+      } else {
+        this.activeEmitter.fire(undefined);
+      }
+    }
+    this.floatingEmitter.fire();
+    this.updatePaneVisibility();
+    entry.pane.focus();
+    return true;
+  }
+
+  /** Brings a floating tab back into the pane, and closes its window. */
+  moveBack(inputId: string | undefined = this.focusedFloating?.input.id): boolean {
+    const entry = inputId ? this.entries.get(inputId) : undefined;
+    const aux = entry?.aux;
+    if (!entry || !aux || !entry.pane.relocate) {
+      return false;
+    }
+    const container = this.createContainer();
+    entry.pane.relocate(container);
+    entry.container = container;
+    this.detachWindow(entry);
+    aux.close();
+    this.strip.appendChild(entry.element);
+    this.empty.hidden = true;
+    this.layout.setContentPaneVisible(true);
+    this.floatingEmitter.fire();
+    this.activate(entry, true, true);
+    return true;
   }
 
   /** Activates the tab `offset` positions away from the active one, wrapping around. */
@@ -234,6 +362,7 @@ export class ContentPane {
     if (entry && element) {
       element.textContent = label;
       entry.element.title = label;
+      entry.aux?.setTitle(label);
     }
   }
 
@@ -244,10 +373,70 @@ export class ContentPane {
     });
   }
 
-  private activate(entry: TabEntry, focus: boolean): void {
+  private createContainer(): HTMLElement {
+    const container = document.createElement('div');
+    container.className = 'content-editor';
+    container.hidden = true;
+    this.body.appendChild(container);
+    return container;
+  }
+
+  private attachWindow(entry: TabEntry, aux: AuxWindow): void {
+    const subscriptions = entry.auxSubscriptions;
+    if (this.options.watchWindow) {
+      subscriptions.add(this.options.watchWindow(aux.window));
+    }
+    subscriptions.add(
+      aux.onDidChangeFocus((focused) => {
+        if (focused) {
+          this.focusedFloating = entry;
+        } else if (this.focusedFloating === entry) {
+          this.focusedFloating = undefined;
+        }
+        this.focusEmitter.fire(this.hasFocus);
+      }),
+    );
+    // Closing the window closes the tab, after the editor's say (unsaved changes), as in VS Code.
+    aux.onWillClose = () => this.close(entry.input.id);
+    aux.onMoveBack = () => this.moveBack(entry.input.id);
+    subscriptions.add(
+      aux.onDidClose(() => {
+        // Still attached: the window went away under us (e.g. destroyed); drop the tab.
+        if (entry.aux === aux) {
+          this.remove(entry);
+        }
+      }),
+    );
+  }
+
+  /** Forgets a floating tab's window; returns it (still open). */
+  private detachWindow(entry: TabEntry): AuxWindow | undefined {
+    const aux = entry.aux;
+    entry.aux = undefined;
+    entry.auxSubscriptions.clear();
+    if (this.focusedFloating === entry) {
+      this.focusedFloating = undefined;
+      this.focusEmitter.fire(this.hasFocus);
+    }
+    if (aux) {
+      aux.onWillClose = undefined;
+      aux.onMoveBack = undefined;
+    }
+    return aux;
+  }
+
+  private updatePaneVisibility(): void {
+    if (this.ordered().length === 0) {
+      this.empty.hidden = false;
+      // The pane shows while it has something to show.
+      this.layout.setContentPaneVisible(false);
+    }
+  }
+
+  private activate(entry: TabEntry, focus: boolean, force = false): void {
     const previous = this.activeId ? this.entries.get(this.activeId) : undefined;
-    const changed = previous !== entry;
-    if (previous && changed) {
+    const changed = previous !== entry || force;
+    if (previous && previous !== entry) {
       previous.element.classList.remove('active');
       previous.element.setAttribute('aria-selected', 'false');
       previous.container.hidden = true;
@@ -284,6 +473,7 @@ export class ContentPane {
     }
     entry.isDirty = dirty;
     entry.element.classList.toggle('dirty', dirty);
+    entry.aux?.setDirty(dirty);
     if (dirty) {
       this.pin(entry);
     }
@@ -316,7 +506,7 @@ export class ContentPane {
     tab.appendChild(close);
     tab.addEventListener('mousedown', (event) => {
       const entry = this.entries.get(input.id);
-      if (event.button === 0 && entry) {
+      if (event.button === 0 && entry && !entry.aux) {
         this.activate(entry, true);
       }
     });

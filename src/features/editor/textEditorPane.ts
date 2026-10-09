@@ -45,10 +45,13 @@ export function selectionToDto(selection: {
 }
 
 export class TextEditorPane implements EditorPane {
-  readonly editor: CodeEditor;
+  editor: CodeEditor;
   private readonly model: ModelReference;
   private readonly disposables = new DisposableStore();
-  private readonly banner: HTMLElement;
+  /** What belongs to the current Monaco widget; recreated when the pane moves. */
+  private readonly editorDisposables = new DisposableStore();
+  private banner: HTMLElement;
+  private body: HTMLElement;
   private readonly textEditorsEmitter = new Emitter<void>();
   readonly onDidChangeTextEditors = this.textEditorsEmitter.event;
 
@@ -64,15 +67,47 @@ export class TextEditorPane implements EditorPane {
   ) {
     this.model = models.acquire(data.document);
     const entry = this.model.entry;
-    container.classList.add('text-editor-container');
-    this.banner = document.createElement('div');
-    this.banner.className = 'editor-banner';
-    this.banner.hidden = true;
-    const body = document.createElement('div');
-    body.className = 'editor-body';
-    container.append(this.banner, body);
+    [this.banner, this.body] = this.createLayout(container);
+    this.editor = this.createEditor();
+    host.setDirty(entry.isDirty);
+    this.disposables.add(entry.onDidChangeDirty((dirty) => host.setDirty(dirty)));
+    this.disposables.add(entry.onDidConflict(() => this.showConflict()));
+    this.disposables.add(this.editorDisposables);
+  }
 
-    this.editor = monaco.editor.create(body, {
+  /** A new Monaco widget in `container` (e.g. another window's), same model, same view state. */
+  relocate(container: HTMLElement): void {
+    const viewState = this.editor.saveViewState();
+    const conflictShown = !this.banner.hidden;
+    this.editorDisposables.clear();
+    this.editor.dispose();
+    this.banner.remove();
+    this.body.remove();
+    [this.banner, this.body] = this.createLayout(container);
+    this.editor = this.createEditor();
+    if (viewState) {
+      this.editor.restoreViewState(viewState);
+    }
+    if (conflictShown) {
+      this.showConflict();
+    }
+  }
+
+  private createLayout(container: HTMLElement): [HTMLElement, HTMLElement] {
+    const doc = container.ownerDocument;
+    container.classList.add('text-editor-container');
+    const banner = doc.createElement('div');
+    banner.className = 'editor-banner';
+    banner.hidden = true;
+    const body = doc.createElement('div');
+    body.className = 'editor-body';
+    container.append(banner, body);
+    return [banner, body];
+  }
+
+  private createEditor(): CodeEditor {
+    const entry = this.model.entry;
+    const editor = this.monaco.editor.create(this.body, {
       model: entry.model,
       readOnly: entry.readOnly,
       automaticLayout: true,
@@ -80,19 +115,17 @@ export class TextEditorPane implements EditorPane {
       scrollBeyondLastLine: false,
       fixedOverflowWidgets: true,
     });
-    host.setDirty(entry.isDirty);
-    this.disposables.add(entry.onDidChangeDirty((dirty) => host.setDirty(dirty)));
-    this.disposables.add(entry.onDidConflict(() => this.showConflict()));
-    this.disposables.add(
-      this.editor.onDidChangeCursorSelection(() => {
+    this.editorDisposables.add(
+      editor.onDidChangeCursorSelection(() => {
         this.connection.rpc?.notify('editor.didChangeSelection', {
-          editorId: data.editorId,
-          selections: (this.editor.getSelections() ?? []).map(selectionToDto),
+          editorId: this.data.editorId,
+          selections: (editor.getSelections() ?? []).map(selectionToDto),
         });
       }),
     );
     // (A preview tab is kept once it has unsaved changes: the content pane pins dirty tabs.)
-    this.disposables.add(this.editor.onDidFocusEditorText(() => host.activate()));
+    this.editorDisposables.add(editor.onDidFocusEditorText(() => this.host.activate()));
+    return editor;
   }
 
   get textEditorIds(): readonly string[] {
@@ -176,17 +209,18 @@ export class TextEditorPane implements EditorPane {
   }
 
   private showConflict(): void {
-    const message = document.createElement('span');
+    const doc = this.banner.ownerDocument;
+    const message = doc.createElement('span');
     message.className = 'editor-banner-message';
     message.textContent = t('changedOnDisk');
-    const reload = document.createElement('button');
+    const reload = doc.createElement('button');
     reload.className = 'button';
     reload.textContent = t('reload');
     reload.addEventListener('click', () => {
       this.banner.hidden = true;
       void this.models.revert(this.uri);
     });
-    const keep = document.createElement('button');
+    const keep = doc.createElement('button');
     keep.className = 'button secondary';
     keep.textContent = t('keepMine');
     keep.addEventListener('click', () => {

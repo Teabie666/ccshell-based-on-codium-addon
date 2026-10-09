@@ -51,10 +51,12 @@ export const markdownModule: ShellModule = {
     subscriptions.add(services.get(IThemes).onDidChange(() => panes.forEach((pane) => pane.refresh())));
 
     const activeMarkdown = (): MarkdownPane | undefined => {
-      const pane = contentPane.active?.pane;
+      const pane = contentPane.current?.pane;
       return pane instanceof MarkdownPane ? pane : undefined;
     };
-    subscriptions.add(contentPane.onDidChangeActive(() => contextKeys.set('activeEditorIsMarkdown', activeMarkdown() !== undefined)));
+    const updateContext = (): void => contextKeys.set('activeEditorIsMarkdown', activeMarkdown() !== undefined);
+    subscriptions.add(contentPane.onDidChangeActive(updateContext));
+    subscriptions.add(contentPane.onDidChangeFocus(updateContext));
     subscriptions.add(
       services.get(ICommands).register(
         'markdown.togglePreview',

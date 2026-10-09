@@ -63,15 +63,18 @@ const webviewFrames = () => page.frames().filter((f) => f.url().startsWith('ccw:
  * same path real keyboard input takes. Playwright's keyboard goes through the DevTools
  * protocol, which bypasses main's before-input-event and so our intercepted shortcuts.
  */
-async function press(shortcut) {
+async function press(shortcut, target = 'main') {
   const parts = shortcut.split('+');
   const keyCode = parts.pop();
   const modifiers = parts.map((m) => m.toLowerCase());
-  await app.evaluate(({ BrowserWindow }, { keyCode, modifiers }) => {
-    const contents = BrowserWindow.getAllWindows()[0].webContents;
-    contents.sendInputEvent({ type: 'keyDown', keyCode, modifiers });
-    contents.sendInputEvent({ type: 'keyUp', keyCode, modifiers });
-  }, { keyCode, modifiers });
+  await app.evaluate(({ BrowserWindow }, { keyCode, modifiers, target }) => {
+    // The main window shows ccw://app; a tab's own window is a blank page it fills.
+    const window = BrowserWindow.getAllWindows().find((w) =>
+      target === 'main' ? w.webContents.getURL().startsWith('ccw://app/') : w.webContents.getURL() === 'about:blank',
+    );
+    window.webContents.sendInputEvent({ type: 'keyDown', keyCode, modifiers });
+    window.webContents.sendInputEvent({ type: 'keyUp', keyCode, modifiers });
+  }, { keyCode, modifiers, target });
 }
 
 await step('chat panel and session list load', async () => {
@@ -368,6 +371,53 @@ await step('Claude: Show Logs opens the extension log in the content pane', asyn
   await press('Control+W');
   await waitFor(async () => (await contentTabs().count()) === 0, 5000, 'the log tab to close');
   return label;
+});
+
+await step('a tab moves into its own window, edits and saves there, and moves back', async () => {
+  await press('Control+P');
+  await page.locator('.quick-input-filter').fill('sample.ts');
+  await waitFor(async () => (await page.locator('.quick-input-item').count()) > 0, 10_000, 'sample.ts in the list');
+  await page.locator('.quick-input-filter').press('Enter');
+  await waitFor(async () => (await editorText()).includes('answer'), 10_000, 'sample.ts in the pane');
+
+  const opened = app.waitForEvent('window');
+  await page.locator('#content-pane .icon-pop-out').click();
+  const aux = await opened;
+  const auxText = async () => (await aux.locator('.aux-body .view-lines').innerText()).replace(/ /g, ' ');
+  await waitFor(async () => (await aux.locator('.aux-body .view-lines').count()) > 0 && (await auxText()).includes('answer'), 10_000, 'the editor in the new window');
+  // Monaco's generated styles (token colors) must reach the new window.
+  const colors = await waitFor(async () => {
+    const count = await aux.evaluate(() => new Set([...document.querySelectorAll('.view-line span span')].map((s) => getComputedStyle(s).color)).size);
+    return count >= 3 ? count : undefined;
+  }, 10_000, 'syntax colors in the new window');
+  if ((await contentTabs().count()) !== 0) throw new Error('the tab stayed in the pane');
+  await aux.screenshot({ path: path.join(runDir, 'aux-window.png') });
+
+  await aux.locator('.aux-body .view-lines').click();
+  await aux.keyboard.press('Control+End');
+  await aux.keyboard.type('// from the window');
+  await waitFor(async () => (await aux.locator('.aux-title.dirty').count()) === 1, 5000, 'the unsaved mark in the window title');
+  await press('Control+S', 'aux');
+  await waitFor(() => readFileSync(sampleFile, 'utf8').includes('// from the window'), 5000, 'the save from the window');
+
+  const closed = aux.waitForEvent('close');
+  await aux.locator('.icon-move-back').click();
+  await closed;
+  await waitFor(async () => (await contentTabs().count()) === 1, 5000, 'the tab back in the pane');
+  await waitFor(async () => (await editorText()).includes('from the window'), 5000, 'the editor back in the pane');
+  return `${colors} token colors in the window`;
+});
+
+await step("closing a tab's own window closes the tab", async () => {
+  const opened = app.waitForEvent('window');
+  await page.locator('#content-pane .icon-pop-out').click();
+  const aux = await opened;
+  await aux.locator('.aux-body .monaco-editor').waitFor({ timeout: 10_000 });
+  const closed = aux.waitForEvent('close');
+  // Like the window's close button: the page may object (unsaved changes), then closes itself.
+  await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().find((w) => w.webContents.getURL() === 'about:blank')?.close());
+  await closed;
+  await waitFor(async () => (await contentTabs().count()) === 0, 5000, 'the tab to be gone');
 });
 
 await step('the title bar button toggles the empty content pane', async () => {

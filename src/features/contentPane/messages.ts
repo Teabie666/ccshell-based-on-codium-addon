@@ -10,4 +10,6 @@ export const t = defineMessages('contentPane', {
   closeActiveEditor: 'Close Editor',
   nextEditor: 'Open Next Editor',
   previousEditor: 'Open Previous Editor',
+  moveToNewWindow: 'Move Editor into New Window',
+  moveBack: 'Move Editor into Main Window',
 });

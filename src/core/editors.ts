@@ -42,6 +42,11 @@ export interface EditorPane extends IDisposable {
   focus(): void;
   /** Returns false to keep the tab open (e.g. the user cancelled saving changes). */
   confirmClose?(): Promise<boolean>;
+  /**
+   * Shows the same editor in another container, possibly in another window's document (a
+   * tab moved into its own window and back). Editors without it cannot be moved.
+   */
+  relocate?(container: HTMLElement): void;
   /** Ids of the text editors this pane shows, the input-taking one first (for `visibleTextEditors`). */
   readonly textEditorIds?: readonly string[];
   readonly onDidChangeTextEditors?: Event<void>;

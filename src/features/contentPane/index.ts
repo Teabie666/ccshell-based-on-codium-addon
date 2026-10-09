@@ -39,20 +39,34 @@ export const contentPaneModule: ShellModule = {
     const connection = services.get(IExtensionHost);
     const frames = services.get(IWebviewFrames);
 
-    const pane = new ContentPane(layout, services.get(IEditors), logger);
+    const pane = new ContentPane(layout, services.get(IEditors), logger, {
+      // Webviews in a tab's own window post their messages to that window.
+      watchWindow: (target) => frames.watchWindow(target),
+    });
     subscriptions.add(services.register(IContentPane, pane));
     subscriptions.add(services.get(IEditors).register(createWebviewEditorProvider(frames, connection)));
     subscriptions.add(services.get(IPanels).registerHost('side', createSidePanelHost(pane)));
     subscriptions.add(connection.onDidDisconnect(() => removeWebviewTabs(pane)));
 
+    const popOut = document.createElement('button');
+    popOut.className = 'icon-button icon-pop-out';
+    popOut.title = t('moveToNewWindow');
+    popOut.setAttribute('aria-label', t('moveToNewWindow'));
+    popOut.addEventListener('click', () => pane.popOut());
+    pane.actions.appendChild(popOut);
+
     const updateContext = (): void => {
       contextKeys.set(FOCUS_KEY, pane.hasFocus);
       contextKeys.set('contentPane.hasTabs', pane.tabs.length > 0);
       contextKeys.set('contentPane.visible', layout.contentPaneVisible);
+      contextKeys.set('contentPane.canPopOut', pane.canPopOut());
+      contextKeys.set('contentPane.floatingFocus', pane.current?.isFloating === true);
+      popOut.hidden = !pane.canPopOut();
     };
     subscriptions.add(pane.onDidChangeFocus(updateContext));
     subscriptions.add(pane.onDidChangeActive(updateContext));
     subscriptions.add(pane.onDidClose(updateContext));
+    subscriptions.add(pane.onDidChangeFloating(updateContext));
     subscriptions.add(layout.onDidChangeContentPaneVisibility(updateContext));
     updateContext();
 
@@ -94,6 +108,16 @@ export const contentPaneModule: ShellModule = {
         title: t('previousEditor'),
         category: CommandCategory.view,
         when: 'contentPane.hasTabs',
+      }),
+      commands.register('contentPane.moveToNewWindow', () => pane.popOut(), {
+        title: t('moveToNewWindow'),
+        category: CommandCategory.view,
+        when: 'contentPane.canPopOut',
+      }),
+      commands.register('contentPane.moveToMainWindow', () => pane.moveBack(), {
+        title: t('moveBack'),
+        category: CommandCategory.view,
+        when: 'contentPane.floatingFocus',
       }),
       keybindings.register({ key: 'ctrl+\\', command: 'contentPane.toggle' }),
       keybindings.register({ key: 'ctrl+w', command: 'contentPane.closeEditor', when: focused }),

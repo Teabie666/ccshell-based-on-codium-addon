@@ -2,6 +2,8 @@
   "commandPalette.placeholder": "输入命令名称",
   "contentPane.closeActiveEditor": "关闭编辑器",
   "contentPane.closeEditor": "关闭",
+  "contentPane.moveBack": "将编辑器移动到主窗口",
+  "contentPane.moveToNewWindow": "将编辑器移动到新窗口",
   "contentPane.nextEditor": "打开下一个编辑器",
   "contentPane.noOpenEditors": "没有打开的编辑器",
   "contentPane.openEditors": "打开的编辑器",

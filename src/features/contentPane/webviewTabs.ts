@@ -38,6 +38,8 @@ export function createWebviewEditorProvider(frames: WebviewFrames, connection: E
           }
         },
         focus: () => frames.focus(webviewId),
+        // The page reloads in its new place; the plan preview asks for its content again.
+        relocate: (target) => frames.relocate(webviewId, target),
         confirmClose: () => {
           // The extension decides; it answers with panel.dispose, which removes the tab.
           connection.rpc?.notify('panel.didClose', { panelId });
