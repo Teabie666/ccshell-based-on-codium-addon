@@ -10,6 +10,8 @@ import { startWorkbench } from '../../core/workbench';
 import { commandPaletteModule } from '../../features/commandPalette';
 import { contentPaneModule } from '../../features/contentPane';
 import { conversationsModule } from '../../features/conversations';
+import { editorModule } from '../../features/editor';
+import { quickOpenModule } from '../../features/quickOpen';
 import { extensionHostStatusModule } from '../../features/extensionHostStatus';
 import { extensionMenusModule } from '../../features/extensionMenus';
 import { languageModule } from '../../features/language';
@@ -21,6 +23,8 @@ const modules: ShellModule[] = [
   windowModule,
   conversationsModule,
   contentPaneModule,
+  editorModule,
+  quickOpenModule,
   sessionsModule,
   themesModule,
   languageModule,

@@ -433,8 +433,9 @@ export class TextDocuments implements IDisposable {
     await this.fireWillSave(document);
     const text = document.getText();
     if (scheme === 'file') {
-      // Our own write must not look like an external change.
-      this.suppressWatch(document.uri.toString());
+      // Our own write must not look like an external change, even if the user types on
+      // before the watcher reports it.
+      this.written.set(document.uri.toString(), text);
       await fs.promises.writeFile(document.uri.fsPath, text, 'utf8');
     } else {
       await this.fileSystem.writeFile(document.uri, new TextEncoder().encode(text));
@@ -474,11 +475,8 @@ export class TextDocuments implements IDisposable {
 
   // ---- external changes to attached files -------------------------------------------
 
-  private readonly suppressedUntil = new Map<string, number>();
-
-  private suppressWatch(key: string): void {
-    this.suppressedUntil.set(key, Date.now() + 500);
-  }
+  /** The text this registry last wrote to each file. */
+  private readonly written = new Map<string, string>();
 
   private watch(document: TextDocumentImpl): void {
     if (document.uri.scheme !== 'file') {
@@ -501,6 +499,7 @@ export class TextDocuments implements IDisposable {
       entry.watcher.close();
       this.watchers.delete(key);
     }
+    this.written.delete(key);
   }
 
   private scheduleCheck(key: string): void {
@@ -514,7 +513,7 @@ export class TextDocuments implements IDisposable {
 
   private async checkDisk(key: string): Promise<void> {
     const document = this.documents.get(key);
-    if (!document || !this.attached.has(key) || (this.suppressedUntil.get(key) ?? 0) > Date.now()) {
+    if (!document || !this.attached.has(key)) {
       return;
     }
     let text: string;
@@ -523,9 +522,10 @@ export class TextDocuments implements IDisposable {
     } catch {
       return; // Deleted or locked mid-write; the next event will tell.
     }
-    if (text === document.getText()) {
+    if (text === document.getText() || text === this.written.get(key)) {
       return;
     }
+    this.written.delete(key);
     if (document.isDirty) {
       this.backend.didChangeOnDisk(key);
     } else {

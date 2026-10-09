@@ -242,6 +242,79 @@ await step('right-click in the session list does not offer the conversation menu
   return labels.length ? `menu: ${labels.join(' | ')}` : 'no menu';
 }));
 
+// ---- content pane and editor ------------------------------------------------------------
+
+const sampleFile = path.join(workspace, 'src', 'sample.ts');
+const sampleText = 'export const answer: number = 42;\n// a comment\nfunction greet(name: string) {\n  return `hi ${name}`;\n}\n';
+mkdirSync(path.dirname(sampleFile), { recursive: true });
+writeFileSync(sampleFile, sampleText, 'utf8');
+const contentTabs = () => page.locator('#content-pane .content-tab');
+// Monaco renders spaces as no-break spaces.
+const editorText = async () =>
+  (await page.locator('#content-pane .content-editor:not([hidden]) .view-lines').innerText()).replace(/ /g, ' ');
+
+await step('Ctrl+P opens a file in the content pane, highlighted', async () => {
+  await press('Control+P');
+  const filter = page.locator('.quick-input-filter');
+  await filter.waitFor({ timeout: 5000 });
+  await filter.fill('sampl');
+  await waitFor(async () => (await page.locator('.quick-input-item').count()) > 0, 10_000, 'the file in the list');
+  await filter.press('Enter');
+  await waitFor(async () => (await contentTabs().count()) === 1, 15_000, 'a content tab');
+  await waitFor(async () => (await editorText()).includes('answer'), 15_000, 'the file text in Monaco');
+  // Tokens get colors once the grammar has loaded.
+  const colors = await waitFor(async () => {
+    const found = await page.evaluate(() => {
+      const spans = document.querySelectorAll('#content-pane .view-line span span');
+      return [...new Set([...spans].map((span) => getComputedStyle(span).color))];
+    });
+    return found.length >= 3 ? found : undefined;
+  }, 15_000, 'syntax colors');
+  await page.screenshot({ path: path.join(runDir, 'editor.png') });
+  return `${colors.length} token colors`;
+});
+
+await step('the conversation sees the open file (selection sync)', async () => {
+  const seen = await waitFor(async () => {
+    for (const frame of webviewFrames()) {
+      if (await frame.evaluate(() => document.body.innerText.includes('sample.ts')).catch(() => false)) return true;
+    }
+    return false;
+  }, 10_000, 'sample.ts in the chat');
+  return seen ? 'chat mentions sample.ts' : '';
+});
+
+await step('typing marks the tab dirty; Ctrl+S saves to disk', async () => {
+  await page.locator('#content-pane .monaco-editor .view-lines').click();
+  await page.keyboard.press('Control+End');
+  await page.keyboard.type('// edited');
+  await waitFor(async () => (await page.locator('#content-pane .content-tab.dirty').count()) === 1, 5000, 'the dirty marker');
+  await press('Control+S');
+  await waitFor(() => readFileSync(sampleFile, 'utf8').includes('// edited'), 5000, 'the file on disk');
+  await waitFor(async () => (await page.locator('#content-pane .content-tab.dirty').count()) === 0, 5000, 'the tab to be clean');
+});
+
+await step('a change on disk reloads the clean editor', async () => {
+  writeFileSync(sampleFile, `${readFileSync(sampleFile, 'utf8')}\n// from outside\n`, 'utf8');
+  await waitFor(async () => (await editorText()).includes('from outside'), 10_000, 'the editor to reload');
+});
+
+await step('Ctrl+W in the editor closes its tab and the pane hides; the conversation stays', async () => {
+  const conversations = await tabCount();
+  await page.locator('#content-pane .monaco-editor .view-lines').click();
+  await press('Control+W');
+  await waitFor(async () => (await contentTabs().count()) === 0, 5000, 'the content tab to close');
+  await waitFor(() => page.locator('#content-pane').isHidden(), 5000, 'the pane to hide');
+  if ((await tabCount()) !== conversations) throw new Error('a conversation closed too');
+});
+
+await step('the title bar button toggles the empty content pane', async () => {
+  await page.locator('.icon-content-pane').click();
+  await waitFor(() => page.locator('#content-pane').isVisible(), 5000, 'the pane to show');
+  await page.locator('.icon-content-pane').click();
+  await waitFor(() => page.locator('#content-pane').isHidden(), 5000, 'the pane to hide');
+});
+
 await page.screenshot({ path: path.join(runDir, 'final.png') });
 
 await step('open conversations are restored after a restart', async () => {

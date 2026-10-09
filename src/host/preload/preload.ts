@@ -5,7 +5,7 @@
  * cannot cross the context bridge) and MainEventsForRenderer events.
  */
 
-import { contextBridge, ipcRenderer } from 'electron';
+import { contextBridge, ipcRenderer, webUtils } from 'electron';
 import { IpcChannel } from '../../platform/protocol';
 
 ipcRenderer.on(IpcChannel.ExtHostPort, (event) => {
@@ -20,4 +20,6 @@ contextBridge.exposeInMainWorld('ccshellNative', {
   invoke: (method: string, params: unknown): Promise<unknown> =>
     ipcRenderer.invoke(IpcChannel.Rpc, method, params),
   platform: process.platform,
+  /** The disk path of a file dropped onto the window ('' for non-file items). */
+  pathForFile: (file: File): string => webUtils.getPathForFile(file),
 });

@@ -15,6 +15,7 @@ import {
 interface PreloadBridge {
   invoke(method: string, params: unknown): Promise<unknown>;
   readonly platform: string;
+  pathForFile(file: File): string;
 }
 
 declare global {
@@ -37,6 +38,11 @@ export class NativeApi {
 
   get platform(): string {
     return window.ccshellNative.platform;
+  }
+
+  /** The disk path of a dropped file, or '' when it has none. */
+  pathForFile(file: File): string {
+    return window.ccshellNative.pathForFile(file);
   }
 
   on<K extends keyof MainEventsForRenderer>(name: K, listener: (payload: MainEventsForRenderer[K]) => void): IDisposable {

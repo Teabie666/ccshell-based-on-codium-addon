@@ -359,6 +359,40 @@ body.resizing {
   inset: 0;
 }
 
+.text-editor-container {
+  display: flex;
+  flex-direction: column;
+}
+
+.editor-body {
+  position: relative;
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+/* E.g. "changed on disk": a bar above the editor, like VS Code's editor notifications. */
+.editor-banner {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: none;
+  padding: 4px 10px;
+  background: var(--vscode-editorWidget-background);
+  color: var(--vscode-editorWidget-foreground, var(--vscode-foreground));
+  border-bottom: 1px solid var(--vscode-editorWidget-border, var(--vscode-panel-border, transparent));
+}
+
+.editor-banner-message {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+/* Monaco's widgets (find, suggest, hover) follow the shell's square corners. */
+.monaco-editor *,
+.monaco-diff-editor * {
+  border-radius: 0 !important;
+}
+
 .empty-state {
   position: absolute;
   inset: 0;

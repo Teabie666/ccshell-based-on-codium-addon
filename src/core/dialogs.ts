@@ -6,11 +6,23 @@
 import type {
   InputBoxRequest,
   MessageRequest,
+  QuickPickItemDto,
   QuickPickRequest,
 } from '../platform/protocol';
 import { t } from './messages';
 
 const TOAST_TIMEOUT_MS = 10_000;
+
+/** Shell-side options of a quick pick (the extension's pickers use the defaults). */
+export interface QuickPickOptions {
+  /**
+   * Scores an item against the typed text; higher sorts first, undefined hides the item.
+   * Default: case-insensitive substring match in list order.
+   */
+  readonly score?: (item: QuickPickItemDto, query: string) => number | undefined;
+  /** Renders at most this many items. */
+  readonly limit?: number;
+}
 
 export class Dialogs {
   private readonly toasts: HTMLElement;
@@ -25,7 +37,7 @@ export class Dialogs {
     return request.modal ? this.showModal(request) : this.showToast(request);
   }
 
-  showQuickPick(request: QuickPickRequest): Promise<number[] | undefined> {
+  showQuickPick(request: QuickPickRequest, options: QuickPickOptions = {}): Promise<number[] | undefined> {
     return new Promise((resolve) => {
       const { box, finish } = this.openOverlay<number[] | undefined>(resolve, undefined);
       box.classList.add('quick-input');
@@ -45,13 +57,27 @@ export class Dialogs {
 
       const render = (): void => {
         const filter = input.value.trim().toLowerCase();
-        visible = request.items.flatMap((item, index) => {
-          if (item.separator) {
-            return filter ? [] : [index];
-          }
-          const text = `${item.label} ${item.description ?? ''} ${item.detail ?? ''}`.toLowerCase();
-          return !filter || text.includes(filter) ? [index] : [];
-        });
+        const score = options.score;
+        if (score && filter) {
+          visible = request.items
+            .flatMap((item, index) => {
+              const value = item.separator ? undefined : score(item, filter);
+              return value === undefined ? [] : [{ index, value }];
+            })
+            .sort((a, b) => b.value - a.value)
+            .map(({ index }) => index);
+        } else {
+          visible = request.items.flatMap((item, index) => {
+            if (item.separator) {
+              return filter ? [] : [index];
+            }
+            const text = `${item.label} ${item.description ?? ''} ${item.detail ?? ''}`.toLowerCase();
+            return !filter || text.includes(filter) ? [index] : [];
+          });
+        }
+        if (options.limit !== undefined) {
+          visible = visible.slice(0, options.limit);
+        }
         cursor = Math.max(0, Math.min(cursor, visible.length - 1));
         list.replaceChildren(
           ...visible.map((index, position) => {

@@ -13,10 +13,14 @@ export const t = defineMessages('core', {
   categoryView: 'View',
   categoryDeveloper: 'Developer',
   categoryPreferences: 'Preferences',
+  categoryFile: 'File',
 });
 
 /** Command palette categories that several modules use, named as in VS Code. */
 export const CommandCategory = {
+  get file(): string {
+    return t('categoryFile');
+  },
   get view(): string {
     return t('categoryView');
   },
