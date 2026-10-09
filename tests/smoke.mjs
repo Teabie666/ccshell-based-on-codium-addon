@@ -376,6 +376,7 @@ if (existsSync(unimplemented)) {
 const failed = results.filter((r) => !r.ok).length;
 console.log(`\n${results.length - failed}/${results.length} passed. Artifacts: ${runDir}`);
 if (failed === 0 && !process.argv.includes('--keep')) {
-  rmSync(workspace, { recursive: true, force: true });
+  // The extension's processes may hold the folder a moment after the app closed.
+  rmSync(workspace, { recursive: true, force: true, maxRetries: 10, retryDelay: 300 });
 }
 process.exit(failed === 0 ? 0 : 1);

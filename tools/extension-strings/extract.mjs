@@ -209,6 +209,10 @@ function collectWebview(file) {
     if (text.length > MAX_LENGTH && looksLikeText(text.slice(0, MAX_LENGTH), strict)) stats.tooLong++;
     if (looksLikeText(text, strict)) {
       addString(text, kind, 'webview', literal.context.elements);
+    } else if (strict && /^[A-Z][a-z]{1,15}[.…!?]?$/.test(text) && ['=', 'return', '?', ':'].includes(literal.context.after)) {
+      // A one-word label chosen in code: `let label = "Yes"; if (...) label = "Yes, and auto-accept"`.
+      // Monaco has many such words too; a label is kept anyway ("No" must not be Monaco's alone).
+      addString(text, 'value', 'webview');
     } else if (literal.context.children && looksLikePiece(text)) {
       // " command?" alone is no label, but it is part of a sentence: decided once the array is complete.
       pieces.push({ text, elements: literal.context.elements });

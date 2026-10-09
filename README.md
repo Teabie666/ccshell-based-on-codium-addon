@@ -25,7 +25,9 @@ npm run capture-themes   # 从本机 VSCodium 重新抓取内置主题到 resour
 electron . [文件夹] [--folder <dir>] [--extension-dir <dir>] [--user-data-dir <dir>] [--theme <id>] [--log-level <lv>] [--devtools] [--secondary-display]
 ```
 
-界面语言（英文 / 简体中文）：命令面板里的"配置显示语言"（Configure Display Language），或者在 settings.json 里设 `"vilaus.language"`：`"auto"`（默认，跟随系统）、`"zh-cn"`、`"en"`，重启后生效。
+界面语言（英文 / 简体中文）：命令面板里的"配置显示语言"（Configure Display Language），或者在 settings.json 里设 `"vilaus.language"`：`"auto"`（默认，跟随系统）、`"zh-cn"`、`"en"`，重启后生效。中文下，Claude Code 插件自己的界面（按钮、菜单、提示、会话列表）也显示中文，对话内容不翻译；不想要可以设 `"vilaus.translateExtensionUi": false`，立即生效。
+
+插件界面的对照表（`src/nls/zh-cn.extension.json`）只有哈希和译文。维护：`node tools/extension-strings/extract.mjs` 在本地整理插件的界面文字，`npm run nls -- --todo-extension` 导出待译条目，`node tools/extension-strings/merge.mjs <译文.json>` 合并。
 
 数据默认在 `%APPDATA%\Vilausity\`：`settings.json`、`state\`、`logs\<本次启动时间>\`（`main.log`、`exthost.log`、`shim-unimplemented.log`、`output\`）。
 

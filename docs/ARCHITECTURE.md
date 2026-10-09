@@ -41,12 +41,12 @@ Electron main ── 窗口、命令行参数、设置和状态存储（唯一�
 
 插件升级最容易坏的地方，全部集中在这两处，每处都注明对照的插件版本：
 
-- `src/host/exthost/bridge.ts`：在消息层拦截插件 webview 与后端之间的私有请求（比如 `open_diff`、`open_url`）。
+- `src/host/exthost/bridge.ts`：在消息层拦截插件 webview 与后端之间的私有请求（比如 `open_diff`、`open_url`）；插件页面的知识也只写在这里（页面提示 `WebviewPageHints`：评论块的锚点、页面里哪些区域是内容；页面存的状态里的会话 id）。
 - `src/compat/vscode/`：插件依赖的 VS Code 行为细节（比如 diff 标签页的 `TabInputWebview` viewType 前缀）。
 
 这两处和其他文档只描述跟插件交互时看得到的行为（消息格式、命令 id、设置项）；逆向得来的内部细节不写进仓库。
 
-插件升级后的检查顺序：先跑 `npm run smoke`，再看最新一次 `logs\...\shim-unimplemented.log`，有新出现的 API 就补上。
+插件升级后的检查顺序：先跑 `npm run smoke`，再看最新一次 `logs\...\shim-unimplemented.log`，有新出现的 API 就补上。然后是汉化：重跑 `node tools/extension-strings/extract.mjs`，`npm run nls` 看新出现和过时的界面文字（`--todo-extension` 导出补译），并核对 bridge 页面提示里的类名在新版本里还在。
 
 ## 内容面板（M2）
 
@@ -93,6 +93,19 @@ Monaco、Shiki 和 Markdown 渲染都在第一次用到时才加载（renderer �
 - **后备**：页面一直找不到锚点（插件改了界面，或者输入框还没出来）时，壳在对话下方显示内容相同的评论栏（`features/comments/fallbackBar.ts`），功能不受影响。
 - **发出去的格式**：以 `Comments on selected text:` 开头，每条评论一段：`[Re: "<片段>" — <文件>:<行>] <评论>`。片段压成一行、过长截断；文件是相对工作区的路径；行是 `12` 或 `12-15`。
 - 点评论块上的 `文件名:行号` 回到原文：打开着的标签页（文本、diff、Markdown 预览）用 `EditorPane.revealSelection` 选中那段文字，没打开就经插件进程打开文件再选中。
+
+## 插件界面汉化（M3.5）
+
+界面语言是中文时，插件自己的页面（对话、会话列表、计划预览）和插件弹在壳里的通知、选择框、输入框显示中文。插件文件不改，对话内容不动。
+
+- **对照表** `src/nls/zh-cn.extension.json` 不带英文原文。普通文字的键是"长度:哈希"（空白规范化后算 FNV-1a 32 位哈希，36 进制）。只有一个变量的模板（"3 days ago"）单独一节，键是"前缀长度:后缀长度:哈希"，另记变量类型（`number` 只配数字，`any` 配任意短文字），防止配错。译文是空串表示保持英文。算键和查表都在 `platform/extensionStrings.ts`，提取工具和运行时共用，两边算出的键一定一致。
+- **原文清单只在本地**：`node tools/extension-strings/extract.mjs` 扫插件的 `webview/index.js` 和 `extension.js`，输出 `.local/extension-strings/<版本>.json`（英文、键、出现的位置、片段所在的整句）。认界面文字的办法（`scan.mjs` 是一个认压缩代码里字面量和上下文的小扫描器）：显示用的属性（children、title、placeholder、label……）的值、JSX children 数组里的句子片段、webview 里别处像句子的字面量、通知和选择框 API 的参数、计划预览 HTML 里的文字；减掉 Monaco 的文字（插件包里打包了一份 Monaco）；`aria-label` 和超过 100 个字符的不收。
+- **补译**：`npm run nls` 在本地清单存在时顺带检查对照表（缺译只报数量，过时条目算失败）。`npm run nls -- --todo-extension` 导出待译条目（带上下文），译好后用 `node tools/extension-strings/merge.mjs <译文.json>` 合进表：只写键和译文，跟英文相同的存成空串，清单里已经没有的删掉。术语见 `docs/design.md` 的"文案"。
+- **页面里怎么换**：main 渲染插件页面时，界面语言是中文、`vilaus.translateExtensionUi` 开着，就把表放进引导数据。引导脚本（`host/webview/translate.ts`）先过一遍已有的文本节点和 `title` / `placeholder` / `data-placeholder` 属性，再用 MutationObserver 跟着插件的 React 重绘替换。替换时保留原文首尾的空白，并记下原文，关掉设置时原样换回。`aria-label` 不翻：屏幕上看不到，壳（评论锚点、排除区）和测试还靠它定位。
+- **哪里不翻**：页面上哪些区域是"内容"属于插件页面的知识，由 bridge 的 `WebviewPageHints.untranslated` 按页面给出（对照 2.1.282）：对话的消息列表、Markdown、用户消息、提问卡片的标题 / 问题 / 选项、权限卡片里的工具说明和参数、会话 / 分组 / worktree 名、对话标题；计划预览里是计划正文和评论引用的原文。引导脚本另外总是跳过可编辑区域（输入框、textarea；输入框自己的提示文字照翻）、代码（pre、code）和壳自己注入的元素。bridge 没给提示的页面（新版插件新出的页面）整页不翻。剩下的风险：排除区以外的内容恰好跟某条界面文字一字不差，会被翻成中文。
+- **句子片段和模板**：插件把一句话拆成几个文本节点（"Allow reading from" + 路径 + "?"），只能一段段换；中文语序对得上的才翻（"允许读取" + 路径 + "?"），带复数词尾之类对不上的保持英文。模板的变量本身是表里的文字时也一起换（"`<模式说明>`. Click to change…"）。紧凑的时长（"5m"、"2h 30m"）格式不一，统一保持英文。
+- **壳里的提示**：插件经 `window.showInformationMessage` / `showQuickPick` / `showInputBox` 弹出的文字，在插件进程里（`host/exthost/compatHost.ts`）查表后再发给渲染进程。返回给插件的仍是它自己的条目，插件按英文比较选项不受影响。表经 `ExtHostInitData.extensionTranslations` 交给插件进程，是否翻译按当时的设置。
+- **设置** `vilaus.translateExtensionUi`：默认开，只在中文界面起作用，改了立即生效：main 通知渲染进程，渲染进程给每个 webview 发控制消息（开 = 发表，关 = 换回原文）。
 
 ## 加功能该改哪里
 

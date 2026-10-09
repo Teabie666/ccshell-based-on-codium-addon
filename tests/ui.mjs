@@ -192,12 +192,23 @@ const clickRecordedMenuItem = (label) =>
     globalThis.vilausLastMenu.items.find((item) => item.label === label).click();
   }, label);
 const activeConversation = () => page.locator('#main .panel:not([hidden]) .webview-frame');
+
+/** Right-clicks until the menu shows: a click just after the page moved (a zoom reset) can miss. */
+async function openContextMenu(locator) {
+  for (let attempt = 1; ; attempt++) {
+    await rightClick(locator);
+    try {
+      return await waitFor(recordedMenu, 2500, 'the context menu');
+    } catch (error) {
+      if (attempt === 3) throw error;
+    }
+  }
+}
 /** The extension's webview/context items, as an English UI shows them (sorted by title). */
 const conversationMenu = ['Add Session Tab to Group', 'Mark Session as Unread', 'Rename Session Tab'];
 
 await step('right-click in a conversation offers the extension menu; Rename Session Tab runs', () => withRecordedMenus(async () => {
-  await rightClick(activeConversation());
-  const labels = await waitFor(recordedMenu, 5000, 'the context menu');
+  const labels = await openContextMenu(activeConversation());
   if (labels.filter((label) => conversationMenu.includes(label)).join('|') !== conversationMenu.join('|')) {
     throw new Error(`menu was: ${labels.join(' | ')}`);
   }
@@ -225,8 +236,7 @@ await step('right-click in a conversation offers the extension menu; Rename Sess
 }));
 
 await step('Add Session Tab to Group from the conversation menu shows the group picker', () => withRecordedMenus(async () => {
-  await rightClick(activeConversation());
-  await waitFor(recordedMenu, 5000, 'the context menu');
+  await openContextMenu(activeConversation());
   await clickRecordedMenuItem('Add Session Tab to Group');
   const items = await waitFor(async () => {
     const rows = page.locator('.quick-input-item');
@@ -800,18 +810,81 @@ await step('Configure Display Language switches the shell to Chinese after a res
   await page.locator('.quick-input-filter').press('Escape');
 
   const menu = await withRecordedMenus(async () => {
-    await rightClick(activeConversation());
-    return waitFor(recordedMenu, 5000, 'the context menu');
+    return openContextMenu(activeConversation());
   });
   const expected = ['将会话标签页添加到分组', '将会话标记为未读', '重命名会话标签页'];
   if (!expected.every((label) => menu.includes(label))) throw new Error(`menu was: ${menu.join(' | ')}`);
   return `palette: ${command.replace(/\s+/g, ' ')}; menu: ${menu.join(' | ')}`;
 });
 
+await step("in Chinese the extension's UI is Chinese too; its content and aria-labels are not, and the setting applies at once", async () => {
+  const cjk = /[一-鿿]/;
+  const frame = await waitFor(conversationFrame, 10_000, 'the conversation');
+  // Found by its aria-label, which stays English.
+  const input = frame.locator('[role="textbox"][aria-label="Message input"]');
+  await input.waitFor({ timeout: 30_000 });
+  const placeholder = await waitFor(async () => {
+    const value = await input.getAttribute('data-placeholder');
+    return value && cjk.test(value) ? value : undefined;
+  }, 10_000, 'a Chinese input placeholder');
+  const sessions = webviewFrames().find((candidate) => candidate !== frame);
+  const listText = sessions ? await sessions.locator('body').innerText() : '';
+  if (!cjk.test(listText)) throw new Error(`the session list says ${JSON.stringify(listText.slice(0, 200))}`);
+
+  // Text in a part of the page that shows content keeps its words, even ones the table has.
+  const texts = await frame.evaluate(async () => {
+    const region = document.createElement('div');
+    region.setAttribute('aria-label', 'Claude Code conversation');
+    region.innerHTML = '<p>New session</p>';
+    const outside = document.createElement('p');
+    outside.textContent = 'New session';
+    document.body.append(region, outside);
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    const result = [region.innerText.trim(), outside.textContent ?? ''];
+    region.remove();
+    outside.remove();
+    return result;
+  });
+  if (texts[0] !== 'New session' || !cjk.test(texts[1])) throw new Error(`content / UI text: ${texts.join(' / ')}`);
+
+  // Turned off, the page shows its own text again at once; turned on, Chinese again.
+  const settings = readSettings();
+  writeFileSync(settingsFile, JSON.stringify({ ...settings, 'vilaus.translateExtensionUi': false }, null, 2), 'utf8');
+  await waitFor(async () => !cjk.test((await input.getAttribute('data-placeholder')) ?? '中'), 10_000, 'the English placeholder');
+  writeFileSync(settingsFile, JSON.stringify(settings, null, 2), 'utf8');
+  await waitFor(async () => cjk.test((await input.getAttribute('data-placeholder')) ?? ''), 10_000, 'the Chinese placeholder again');
+
+  // What the extension shows in the shell (Rename Session Tab's input box, or its notice) is Chinese.
+  const outcome = await withRecordedMenus(async () => {
+    await openContextMenu(activeConversation());
+    await clickRecordedMenuItem('重命名会话标签页');
+    return waitFor(async () => {
+      if (await page.locator('.quick-input-filter').count()) return 'input box';
+      const toast = page.locator('.toast-message');
+      return (await toast.count()) ? `message "${await toast.first().innerText()}"` : undefined;
+    }, 10_000, 'the rename command to answer');
+  });
+  let rename = outcome;
+  if (outcome === 'input box') {
+    await page.locator('.quick-input-filter').fill('');
+    await page.locator('.quick-input-filter').press('Enter');
+    rename = await waitFor(async () => {
+      const validation = page.locator('.quick-input-validation');
+      return (await validation.count()) ? validation.innerText() : undefined;
+    }, 5000, 'the validation message');
+    await page.locator('.quick-input-filter').press('Escape');
+  } else {
+    await page.locator('.toast-close').first().click();
+  }
+  if (!cjk.test(rename)) throw new Error(`the rename answered in English: ${rename}`);
+  return `placeholder "${placeholder}"; rename: ${rename}`;
+});
+
 await app.close();
 const failed = results.filter((ok) => !ok).length;
 console.log(`\n${results.length - failed}/${results.length} passed. Artifacts: ${runDir}`);
 if (failed === 0) {
-  rmSync(workspace, { recursive: true, force: true });
+  // The extension's processes may hold the folder a moment after the app closed.
+  rmSync(workspace, { recursive: true, force: true, maxRetries: 10, retryDelay: 300 });
 }
 process.exit(failed === 0 ? 0 : 1);

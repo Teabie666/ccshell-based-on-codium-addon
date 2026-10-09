@@ -43,9 +43,11 @@ const PLAN_PREVIEW_VIEW_TYPE = 'claudePlanPreview';
  * of the UI text leaves alone (anthropic.claude-code 2.1.282; the conversation and the session
  * list are one bundle, so one list serves both): the conversation; Markdown (a plan in a
  * permission prompt); a user message wherever it is repeated; what Claude asks in a question
- * card (tab header, question, options); what a permission prompt shows of the tool call (its
- * description, file, JSON input; a command is editable, which the translation skips anyway);
- * session, group and worktree names; the session title in the conversation's header.
+ * card (tab header, question, options); what a permission prompt shows of the tool call (a
+ * command's description, a skill's description and arguments, the file, the JSON input; a
+ * command is editable, which the translation skips anyway; the plan prompt's description is
+ * the extension's own text, so the description class only counts after those); session, group
+ * and worktree names; the session title in the conversation's header.
  */
 const PAGE_CONTENT = [
   '[aria-label="Claude Code conversation"]',
@@ -55,7 +57,8 @@ const PAGE_CONTENT = [
   '.questionTextLarge_hONcXw',
   '.optionLabel_hONcXw',
   '.optionDescription_hONcXw',
-  '.permissionRequestDescription_qlaBag',
+  '.permissionRequestInput_qlaBag ~ .permissionRequestDescription_qlaBag',
+  '.skillNote_qlaBag ~ .permissionRequestDescription_qlaBag',
   '.permissionPath_qlaBag',
   '.inputJson_qlaBag',
   '.sessionName_OOQiHg',
