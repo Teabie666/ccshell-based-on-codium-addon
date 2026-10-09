@@ -540,6 +540,43 @@ await step('settings.json opens in the editor, validated against the settings sc
   }
 });
 
+await step('Diff Editor: Font Size applies to diffs only', async () => {
+  writeFileSync(settingsFile, JSON.stringify({ ...readSettings(), 'diffEditor.fontSize': 18 }, null, 2), 'utf8');
+  await press('Control+P');
+  await page.locator('.quick-input-filter').fill('sample.ts');
+  await waitFor(async () => (await page.locator('.quick-input-item').count()) > 0, 10_000, 'sample.ts in the list');
+  await page.locator('.quick-input-filter').press('Enter');
+  await waitFor(async () => (await editorText()).includes('answer'), 10_000, 'sample.ts in the pane');
+  await page.locator('#content-pane .monaco-editor .view-lines').click();
+  await page.keyboard.press('Control+Home');
+  await page.keyboard.type('// diff font\n');
+  await press('Control+Shift+P');
+  await page.locator('.quick-input-filter').fill('Compare Active File with Saved');
+  await waitFor(async () => (await page.locator('.quick-input-item').count()) === 1, 5000, 'the command');
+  await page.locator('.quick-input-filter').press('Enter');
+  const diffSize = await waitFor(async () => {
+    const lines = page.locator('#content-pane .content-editor:not([hidden]) .monaco-diff-editor .view-lines');
+    const size = (await lines.count()) ? await lines.first().evaluate((element) => getComputedStyle(element).fontSize) : '';
+    return size === '18px' ? size : undefined;
+  }, 10_000, 'the diff at 18px');
+  // Back on the file: the editor keeps the editor font size.
+  await press('Control+W');
+  await waitFor(async () => (await contentTabs().count()) === 1, 5000, 'the diff tab to close');
+  const editorSize = await page.locator('#content-pane .content-editor:not([hidden]) .view-lines').evaluate((element) => getComputedStyle(element).fontSize);
+  if (editorSize === '18px') throw new Error('the editor took the diff font size');
+  await page.locator('#content-pane .monaco-editor .view-lines').click();
+  // Typing and Enter are separate undo steps.
+  await waitFor(async () => {
+    await page.keyboard.press('Control+Z');
+    return (await page.locator('#content-pane .content-tab.dirty').count()) === 0;
+  }, 5000, 'the file clean again');
+  await press('Control+W');
+  await waitFor(async () => (await contentTabs().count()) === 0, 5000, 'the tab to close');
+  const { 'diffEditor.fontSize': _removed, ...rest } = readSettings();
+  writeFileSync(settingsFile, JSON.stringify(rest, null, 2), 'utf8');
+  return `diff ${diffSize}, editor ${editorSize}`;
+});
+
 await page.screenshot({ path: path.join(runDir, 'final.png') });
 
 await step('open conversations are restored after a restart', async () => {

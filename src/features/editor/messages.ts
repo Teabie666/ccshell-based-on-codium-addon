@@ -42,6 +42,8 @@ export const t = defineMessages('editor', {
   cursorBlinking: 'Controls the cursor animation style.',
   smoothScrolling: 'Scrolls with an animation.',
   scrollBeyondLastLine: 'Lets the editor scroll beyond the last line.',
+  diffFontFamily: 'The font family of diffs. Empty: the editor font.',
+  diffFontSize: 'The font size of diffs, in pixels. 0: the editor font size.',
   renderSideBySide: 'Shows the diff side by side; off shows it inline.',
   inlineWhenNarrow: 'Shows the diff inline when the editor is too narrow for side by side.',
   ignoreTrimWhitespace: 'Ignores changes in leading or trailing whitespace.',

@@ -48,6 +48,8 @@
   "editor.compareWithSavedTitle": "{0}（磁盘上）↔ {0}",
   "editor.cursorBlinking": "控制光标动画样式。",
   "editor.detectIndentation": "打开文件时根据文件内容检测制表符大小和插入空格。",
+  "editor.diffFontFamily": "差异编辑器的字体系列。为空时使用编辑器的字体。",
+  "editor.diffFontSize": "差异编辑器的字号，以像素为单位。为 0 时使用编辑器的字号。",
   "editor.diffWordWrap": "控制差异编辑器中的换行方式；inherit 表示跟随自动换行。",
   "editor.dontSave": "不保存",
   "editor.fontFamily": "控制字体系列。",

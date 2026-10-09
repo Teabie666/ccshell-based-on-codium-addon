@@ -58,6 +58,8 @@ export function editorSettingDefinitions(): SettingDefinition[] {
     }),
     editor('editor.smoothScrolling', { type: 'boolean', default: false, description: t('smoothScrolling') }),
     editor('editor.scrollBeyondLastLine', { type: 'boolean', default: true, description: t('scrollBeyondLastLine') }),
+    diffEditor('diffEditor.fontFamily', { type: 'string', default: '', description: t('diffFontFamily') }),
+    diffEditor('diffEditor.fontSize', { type: 'number', default: 0, minimum: 0, maximum: 100, description: t('diffFontSize') }),
     diffEditor('diffEditor.renderSideBySide', { type: 'boolean', default: true, description: t('renderSideBySide') }),
     diffEditor('diffEditor.useInlineViewWhenSpaceIsLimited', { type: 'boolean', default: true, description: t('inlineWhenNarrow') }),
     diffEditor('diffEditor.ignoreTrimWhitespace', { type: 'boolean', default: true, description: t('ignoreTrimWhitespace') }),
@@ -87,14 +89,23 @@ export function editorOptions(settings: SettingsService): Record<string, unknown
   };
 }
 
-/** The diff editor's own options, on top of `editorOptions`. */
+/** The diff editor's own options, on top of `editorOptions`; its own font when set, else the editor's. */
 export function diffEditorOptions(settings: SettingsService): Record<string, unknown> {
-  return {
+  const options: Record<string, unknown> = {
     renderSideBySide: settings.get('diffEditor.renderSideBySide', true),
     useInlineViewWhenSpaceIsLimited: settings.get('diffEditor.useInlineViewWhenSpaceIsLimited', true),
     ignoreTrimWhitespace: settings.get('diffEditor.ignoreTrimWhitespace', true),
     diffWordWrap: settings.get('diffEditor.wordWrap', 'inherit'),
   };
+  const fontFamily = settings.get<unknown>('diffEditor.fontFamily', '');
+  const fontSize = settings.get<unknown>('diffEditor.fontSize', 0);
+  if (typeof fontFamily === 'string' && fontFamily.trim()) {
+    options.fontFamily = fontFamily;
+  }
+  if (typeof fontSize === 'number' && fontSize > 0) {
+    options.fontSize = fontSize;
+  }
+  return options;
 }
 
 /** Indentation of a text model: detected from its text, or the configured one. */
