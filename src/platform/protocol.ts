@@ -36,6 +36,26 @@ export interface ThemeData {
   readonly variables: Readonly<Record<string, string>>;
 }
 
+/**
+ * Translations of the Claude Code extension's own UI text (M3.5, see
+ * platform/extensionStrings.ts). Holds no English: keys are lengths and hashes.
+ */
+export interface ExtensionTranslations {
+  /** The extension version the table was last checked against. */
+  readonly extensionVersion: string;
+  /** `<length>:<hash>` of a normalized text -> its translation ("" keeps the English). */
+  readonly strings: Readonly<Record<string, string>>;
+  /** `<prefix length>:<suffix length>:<hash>` of a template with one variable -> its translation. */
+  readonly templates: Readonly<Record<string, TemplateTranslation>>;
+}
+
+export interface TemplateTranslation {
+  /** What the variable may be: digits (a count, a percentage) or any short text. */
+  readonly type: 'number' | 'any';
+  /** `{0}` stands for the variable ("" keeps the English). */
+  readonly text: string;
+}
+
 export interface AppInfo {
   /** Reported as `vscode.env.appName`; the extension tunes behaviour per host, so we mimic VSCodium. */
   readonly appName: string;
@@ -68,6 +88,8 @@ export interface ExtHostInitData {
   readonly logLevel: number;
   readonly app: AppInfo;
   readonly themeKind: ThemeKind;
+  /** The extension UI's translations in this run's language (none for English). */
+  readonly extensionTranslations?: ExtensionTranslations;
 }
 
 /**
@@ -81,6 +103,12 @@ export interface WebviewPageHints {
    * input). Set for conversation panels only.
    */
   readonly commentsAnchor?: string;
+  /**
+   * CSS selector of the parts of the page that show content rather than the extension's own
+   * UI (the conversation, names, what Claude asks), which the translation of the extension's
+   * UI text leaves alone. Pages without it are not translated.
+   */
+  readonly untranslated?: string;
 }
 
 export interface WebviewDocument {
@@ -499,6 +527,8 @@ export type MainEventsForRenderer = {
   languageChanged: { readonly language: UiLanguage };
   /** settings.json changed (from the shell or by hand): all values, and the keys that changed. */
   settingsChanged: { readonly values: Readonly<Record<string, unknown>>; readonly keys: readonly string[] };
+  /** The extension's UI text is translated with this table now (null: it is not). */
+  extensionTranslationsChanged: { readonly translations: ExtensionTranslations | null };
 };
 
 export interface MainEventMessage<K extends keyof MainEventsForRenderer = keyof MainEventsForRenderer> {
@@ -533,6 +563,8 @@ export interface WebviewBootstrapData {
   readonly state: unknown;
   readonly theme: ThemeData;
   readonly hints?: WebviewPageHints;
+  /** Shows the extension's UI text in the display language (pages with `hints.untranslated` only). */
+  readonly translations?: ExtensionTranslations;
 }
 
 /** An element's box in a webview's viewport, in CSS pixels. */
@@ -622,4 +654,6 @@ export type ShellToWebviewControl =
     }
   | { readonly ccwControl: 'findStop' }
   /** The comment blocks to show above the input (pages with `commentsAnchor` only); null: none. */
-  | { readonly ccwControl: 'comments'; readonly view: CommentsViewDto | null };
+  | { readonly ccwControl: 'comments'; readonly view: CommentsViewDto | null }
+  /** Translate the extension's UI text with this table from now on; null: show it as it was. */
+  | { readonly ccwControl: 'translations'; readonly translations: ExtensionTranslations | null };
