@@ -11,8 +11,6 @@ export const t = defineMessages('editor', {
   keepMine: 'Keep Mine',
   saveCommand: 'Save',
   revertCommand: 'Revert File',
-  findCommand: 'Find',
-  loadFailed: 'The editor failed to load: {0}',
   proposedChanges: 'Proposed changes',
   accept: 'Accept',
   reject: 'Reject',

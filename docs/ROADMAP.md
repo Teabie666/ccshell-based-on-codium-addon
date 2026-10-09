@@ -10,7 +10,7 @@
 
 每个阶段结束都要做：typecheck、`npm test`、`node tests/ui.mjs`（动了 bridge / compat 再跑 `npm run smoke`）；看最新一次的 `shim-unimplemented.log`；确认没往 `C:\Program Files\VSCodium` 写任何东西、git 里没有密钥；用屏幕工具截图，跟 VSCodium 里的同一界面对比；用 `run-dev.cmd` 试用。
 
-测试现状（2026-10-09）：单元 129/129，语言包 33 条缺译（M2 新加的），界面 20/20，smoke 9/9（M2 后，用 Anthropic 兼容接口跑的）。
+测试现状（2026-10-09）：单元 129/129，语言包 0 条缺译，界面 20/20，smoke 9/9（M2 后，用 Anthropic 兼容接口跑的）。
 
 ## M0 技术验证：完成（2026-10-08）
 
@@ -65,7 +65,7 @@
 - [x] 内容面板：有东西时自动打开，`Ctrl+\` 和标题栏右侧按钮开关，宽度可拖，标签页（预览标签页、脏标记、中键关闭、焦点在面板里时 Ctrl+W / Ctrl+Tab 作用于面板）
 - [x] core 的 editors 贡献点（`core/editors.ts`），以及按区域分发插件 webview 面板（`core/panels.ts`）
 - [x] Monaco 标签页：Shiki 高亮（语法色 Dark+ / Light+，编辑器色取主题变量，切主题跟着变），有行号；Monaco 自己的界面文字按界面语言加载它的中文包
-- [ ] 新加的界面文字都写中英两份：英文已写，中文 33 条待补（`npm run nls -- --todo`）
+- [x] 新加的界面文字都写中英两份（M2 的 34 条译文已补）
 - [x] 打开文件：聊天里点文件（`open_file` → `showTextDocument`）、Ctrl+P / Ctrl+E 快速打开（模糊匹配）、拖进窗口（拖文件还没自动测）
 - [x] Ctrl+S 保存，未保存标记，关闭时问是否保存；磁盘上被 Claude 改了：没改过就自动重新载入，改过就在编辑器上方提示
 - [x] compat 的文本文档跟 Monaco 模型对上：open / change（真实增量）/ will-save / save / close 事件
