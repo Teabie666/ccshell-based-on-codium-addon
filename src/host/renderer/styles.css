@@ -633,6 +633,145 @@ body.resizing {
   color: var(--vscode-settings-headerForeground);
 }
 
+/* The first-run page, over the main area (features/setup). */
+.setup-page {
+  position: absolute;
+  inset: 0;
+  z-index: 5;
+  overflow: auto;
+  background: var(--vscode-editor-background);
+  color: var(--vscode-foreground);
+}
+
+.setup-content {
+  max-width: 680px;
+  padding: 32px 40px;
+}
+
+.setup-title {
+  margin: 0 0 6px;
+  font-size: 1.8em;
+  font-weight: 400;
+}
+
+.setup-intro,
+.setup-text,
+.setup-status,
+.setup-choice-text {
+  color: var(--vscode-descriptionForeground);
+}
+
+.setup-intro {
+  margin: 0 0 20px;
+}
+
+.setup-step {
+  padding: 16px 0;
+  border-top: 1px solid var(--vscode-widget-border, var(--vscode-panel-border));
+}
+
+.setup-step[aria-disabled='true'] {
+  opacity: 0.55;
+}
+
+.setup-step-title {
+  display: flex;
+  gap: 8px;
+  margin: 0 0 6px;
+  font-size: 1.15em;
+  font-weight: 600;
+}
+
+.setup-step-number {
+  color: var(--vscode-descriptionForeground);
+  font-weight: 400;
+}
+
+.setup-text {
+  margin: 0 0 10px;
+}
+
+.setup-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.setup-link {
+  color: var(--vscode-textLink-foreground);
+  text-decoration: none;
+}
+
+.setup-link:hover {
+  text-decoration: underline;
+}
+
+.setup-link[hidden] {
+  display: none;
+}
+
+.setup-progress {
+  height: 2px;
+  margin-top: 10px;
+  background: var(--vscode-widget-border, var(--vscode-panel-border));
+}
+
+.setup-progress[hidden] {
+  display: none;
+}
+
+.setup-progress-bar {
+  width: 0;
+  height: 100%;
+  background: var(--vscode-progressBar-background);
+}
+
+.setup-status {
+  min-height: 1.4em;
+  margin-top: 8px;
+}
+
+.setup-choices {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-width: 520px;
+  margin-bottom: 10px;
+}
+
+.setup-choice {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  padding: 8px 12px;
+  border: 1px solid var(--vscode-widget-border, var(--vscode-panel-border));
+  border-radius: 2px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.setup-choice:hover:not(:disabled) {
+  background: var(--vscode-list-hoverBackground);
+}
+
+.setup-choice:focus-visible {
+  outline: 1px solid var(--vscode-focusBorder);
+  outline-offset: -1px;
+}
+
+.setup-choice:disabled {
+  cursor: default;
+}
+
+.setup-choice-title {
+  font-weight: 600;
+}
+
 /* A block at the top of a settings section (SettingsWidget). */
 .settings-widget {
   margin: 4px 12px 8px 16px;

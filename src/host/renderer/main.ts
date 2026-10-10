@@ -21,6 +21,7 @@ import { extensionUpdatesModule } from '../../features/extensionUpdates';
 import { languageModule } from '../../features/language';
 import { sessionsModule } from '../../features/sessions';
 import { settingsModule } from '../../features/settings';
+import { setupModule } from '../../features/setup';
 import { themesModule } from '../../features/themes';
 import { windowModule } from '../../features/window';
 import { workspaceModule } from '../../features/workspace';
@@ -43,6 +44,7 @@ const modules: ShellModule[] = [
   workspaceModule,
   providersModule,
   extensionUpdatesModule,
+  setupModule,
 ];
 
 startWorkbench(modules).catch((error: unknown) => {

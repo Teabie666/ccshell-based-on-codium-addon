@@ -112,6 +112,16 @@ Monaco、Shiki 和 Markdown 渲染都在第一次用到时才加载（renderer �
 - **界面**（`features/extensionUpdates`）：设置编辑器"插件版本"一节，三个设置项上面是一个自定义块（`SettingsWidget`，`core/settings.ts` 的 `registerWidget`，设置编辑器把它画在所属分节的最前面，搜索按它的关键词过滤）：正在用的版本和来源、待切换的版本和「立即重启」、上一个版本和「退回」、「检查更新」「从 VSIX 安装...」和状态行（进度、结果、按错误码本地化的失败原因）。命令面板里也有这三个动作。
 - **测试**：单元测试用 bsdtar 现做小 `.vsix`、本机起假的 Open VSX（含 302、校验值不符、按版本查询），把下载 → 校验 → 安装 → 下次启动切换 → 回滚 → 清理整个跑一遍，还有第一次更新时备份其他编辑器那份、没有备份时从其他编辑器那份退回。界面测试最后两步：在设置里点"检查更新"（VSCodium 那份被备份成上一个版本）、导入一个别人发布的 VSIX 被拒；重启后用的是新版本，点「退回 X 并重启」，再启动时跑的是备份出来的那份，真插件能激活。界面测试和 smoke 的设置里关了自动更新（不然每个测试实例都会去 Open VSX 下 120 MB），测试结束删掉装的插件。
 
+## 首次启动（M4）
+
+- **找不到插件时**（也没给 `--extension-dir`）窗口照常打开，但不起插件进程（`WindowContext.startExtHost` 直接返回）。`features/setup` 在主区域盖一层首次启动页：
+  - 第 1 步「下载并安装」（走 `extension.check`，进度来自 `extensionStatus`）或「从 VSIX 安装...」；「换一个下载服务器」打开设置的"插件版本"一节。
+  - 第 2 步「用 Claude 账号登录」：关掉这页、开一个对话，登录交给插件自己。「用 API 接口」：`providers.add` 从预设添加并打开编辑页；等它有了密钥（要密钥的类型才等）就 `providers.select` 切过去。「以后再说」在插件装好之后才出现，免得留下一个空窗口。
+- **第一次装好不用重启**：这时没有在跑的插件，主进程的 `afterInstall` 立即 `prepare()`（pending 变成 current）、更新 updater 的 `running`，给每个窗口 `startMissingExtensionHost()`。之后的更新照旧是下次启动换上。没插件时不自动检查更新，等用户点。
+- `--extension-dir` 指的目录里没有插件：报错退出（开发时的错，不提供安装）。
+- **Git**：`host/main/gitLocator.ts` 在 Claude Code 找 Git 的地方找：`CLAUDE_CODE_GIT_BASH_PATH`、PATH、`Program Files\Git`、`%LOCALAPPDATA%\Programs\Git`。找不到时，第一个来问的窗口（`app.startupNotices`）弹一条提示：用途、「下载 Git for Windows」「不再提示」。只提示一次，记在 `state\shell.json`，不限于首次启动。
+- **测试**：开关 `--ignore-other-editors` 不找 VSCodium / VS Code 的插件（只给测试用，不写进 `--help`）。界面测试起一个全新数据目录的实例，加这个开关、PATH 里去掉 Git：检查首次启动页和 Git 提示 → 从本机假 Open VSX 下载安装 → 插件不重启就激活 → 第 2 步选 API 接口、从预设加 DeepSeek → 存了密钥后窗口切过去。
+
 ## 评论（M3）
 
 在内容面板里选中文字写评论，评论显示在对话输入框正上方，随下一条消息发给 Claude（照插件计划评论的做法）。

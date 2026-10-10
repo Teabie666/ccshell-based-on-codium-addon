@@ -17,7 +17,7 @@ import {
   PINNED_VERSION_SETTING,
   type ExtensionErrorCode,
 } from '../../platform/extensionUpdates';
-import type { ExtensionInstallResult, ExtensionStatus } from '../../platform/protocol';
+import type { ExtensionActivity, ExtensionInstallResult, ExtensionStatus } from '../../platform/protocol';
 import { t } from './messages';
 
 const ERROR_TEXT: Record<ExtensionErrorCode, () => string> = {
@@ -49,6 +49,22 @@ export function resultText(result: ExtensionInstallResult): string | undefined {
 /** Why going back did not happen; undefined when it did. */
 export function rollBackFailedText(result: ExtensionInstallResult): string | undefined {
   return result.outcome === 'failed' ? t('rollBackFailed', ERROR_TEXT[result.code]()) : undefined;
+}
+
+/** What the updater is doing, for a status line; undefined when idle. */
+export function activityText(activity: ExtensionActivity): string | undefined {
+  switch (activity.kind) {
+    case 'checking':
+      return t('checking');
+    case 'downloading':
+      return t('downloading', activity.version, progressText(activity.received, activity.total));
+    case 'installing':
+      return t('installing', activity.label);
+    case 'backingUp':
+      return t('backingUp', activity.version);
+    default:
+      return undefined;
+  }
 }
 
 /** `12.3 / 120.5 MB (10%)`, or just the megabytes when the size is unknown. */
@@ -306,14 +322,6 @@ class VersionView {
     }
     this.rollBackButton.disabled = !idle || !status.updatesApply || !target;
     this.statusText.textContent =
-      activity.kind === 'checking'
-        ? t('checking')
-        : activity.kind === 'downloading'
-          ? t('downloading', activity.version, progressText(activity.received, activity.total))
-          : activity.kind === 'installing'
-            ? t('installing', activity.label)
-            : activity.kind === 'backingUp'
-              ? t('backingUp', activity.version)
-              : (note ?? (status.lastCheck ? (resultText(status.lastCheck) ?? '') : ''));
+      activityText(activity) ?? note ?? (status.lastCheck ? (resultText(status.lastCheck) ?? '') : '');
   }
 }

@@ -62,13 +62,19 @@ export class ExtensionUpdater extends Disposable {
   private readonly changeEmitter = this.register(new Emitter<void>());
   readonly onDidChange: Event<void> = this.changeEmitter.event;
 
-  constructor(private readonly options: ExtensionUpdaterOptions) {
+  constructor(private options: ExtensionUpdaterOptions) {
     super();
     this.register({ dispose: () => this.abort.abort() });
   }
 
   get updatesApply(): boolean {
     return this.options.running?.kind !== 'cli';
+  }
+
+  /** The first install started without a restart: that copy runs now. */
+  setRunning(running: LocatedExtension): void {
+    this.options = { ...this.options, running };
+    this.changeEmitter.fire();
   }
 
   status(): ExtensionStatus {

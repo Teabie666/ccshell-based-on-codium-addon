@@ -1245,6 +1245,15 @@ function makeVsix(version, publisher = 'Anthropic') {
 
 const readExtensionState = () => JSON.parse(readFileSync(path.join(dataDir, 'extensions', 'state.json'), 'utf8'));
 
+/** A JSON file's contents; undefined while it is missing or half-written. */
+const readJson = (file) => {
+  try {
+    return JSON.parse(readFileSync(file, 'utf8'));
+  } catch {
+    return undefined;
+  }
+};
+
 /** The workspace window with the settings editor on Extension Version; resolves to the page and the block. */
 async function openExtensionVersion() {
   const main = await waitFor(async () => {
@@ -1260,6 +1269,87 @@ async function openExtensionVersion() {
   await widget.waitFor({ timeout: 5000 });
   return { main, widget };
 }
+
+await step('first run: no extension, no Git -> install from Open VSX without a restart, then connect with an API provider', async () => {
+  // An instance of its own: a fresh data folder, no VSCodium copy, no Git anywhere it looks.
+  const firstRoot = path.join(runDir, 'first-run');
+  const firstData = path.join(firstRoot, 'data');
+  const firstWorkspace = path.join(firstRoot, 'workspace');
+  for (const dir of [firstData, firstWorkspace]) mkdirSync(dir, { recursive: true });
+  const vsix = readFileSync(makeVsix('9.0.0'));
+  const sha256 = createHash('sha256').update(vsix).digest('hex');
+  let base = '';
+  const openVsx = createServer((request, response) => {
+    if (request.url === '/api/anthropic/claude-code/win32-x64') {
+      response.writeHead(200, { 'content-type': 'application/json' }).end(
+        JSON.stringify({
+          namespace: 'Anthropic',
+          name: 'claude-code',
+          version: '9.0.0',
+          targetPlatform: 'win32-x64',
+          files: { download: `${base}/package.vsix`, sha256: `${base}/package.sha256` },
+        }),
+      );
+    } else if (request.url === '/package.vsix') {
+      response.writeHead(200, { 'content-length': vsix.length }).end(vsix);
+    } else if (request.url === '/package.sha256') {
+      response.end(sha256);
+    } else {
+      response.writeHead(404).end();
+    }
+  });
+  await new Promise((resolve) => openVsx.listen(0, '127.0.0.1', resolve));
+  base = `http://127.0.0.1:${openVsx.address().port}`;
+  writeFileSync(
+    path.join(firstData, 'settings.json'),
+    JSON.stringify({ 'vilaus.language': 'en', 'vilaus.extension.autoUpdate': false, 'vilaus.extension.openVsxUrl': base }),
+    'utf8',
+  );
+  // Claude Code looks for Git on PATH (and CLAUDE_CODE_GIT_BASH_PATH), so does the shell.
+  // Variable names ignore case on Windows: match them whatever their case.
+  const noGit = {};
+  for (const [name, value] of Object.entries(env)) {
+    if (/^claude_code_git_bash_path$/i.test(name)) continue;
+    noGit[name] = /^path$/i.test(name) ? value.split(';').filter((dir) => !/git/i.test(dir)).join(';') : value;
+  }
+
+  const first = await electron.launch({
+    executablePath: electronPath,
+    args: ['.', '--user-data-dir', firstData, '--folder', firstWorkspace, '--secondary-display', '--ignore-other-editors'],
+    cwd: root,
+    env: noGit,
+    timeout: 60_000,
+  });
+  try {
+    const firstPage = await first.firstWindow();
+    const setup = firstPage.locator('.setup-page');
+    await setup.waitFor({ timeout: 30_000 });
+    await firstPage.locator('.toast', { hasText: 'Git for Windows was not found' }).waitFor({ timeout: 10_000 });
+    // Connecting waits for the extension.
+    if (!(await firstPage.locator('.setup-provider').isDisabled())) throw new Error('step 2 is enabled before the install');
+
+    await firstPage.locator('.setup-download').click();
+    const status = firstPage.locator('.setup-status');
+    await waitFor(async () => (await status.innerText()) === 'Claude Code 9.0.0 is installed.', 60_000, 'the install and the extension host');
+    await waitFor(() => readJson(path.join(firstData, 'extensions', 'state.json'))?.lastGood === '9.0.0', 30_000, 'the new extension to activate');
+    await firstPage.screenshot({ path: path.join(runDir, 'first-run.png') });
+
+    await firstPage.locator('.setup-provider').click();
+    await firstPage.locator('.quick-input-filter').fill('DeepSeek');
+    await firstPage.locator('.quick-input-filter').press('Enter');
+    await setup.waitFor({ state: 'detached', timeout: 10_000 });
+    const providers = await waitFor(() => readJson(path.join(firstData, 'providers.json'))?.providers, 10_000, 'the new provider');
+    const { id } = providers[0];
+    // The key, as the editor saves it; the window then switches to the provider.
+    await firstPage.evaluate((params) => window.vilausNative.invoke('providers.setKey', params), { id, key: 'sk-first-run' });
+    await waitFor(async () => (await firstPage.locator('.titlebar-provider-label').innerText()) === 'DeepSeek', 10_000, 'the window to use DeepSeek');
+    return `installed 9.0.0 from ${base}; provider ${id}`;
+  } finally {
+    await first.close();
+    openVsx.close();
+    rmSync(path.join(firstData, 'extensions'), { recursive: true, force: true, maxRetries: 10, retryDelay: 300 });
+  }
+});
 
 // Last on purpose: the versions installed here become current at the next starts of this data folder.
 await step('Extension Version in settings: Check for Updates installs from Open VSX; a VSIX of someone else is refused', async () => {

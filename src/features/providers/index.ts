@@ -152,11 +152,13 @@ export const providersModule: ShellModule = {
     subscriptions.add(
       commands.register(
         'providers.add',
-        async () => {
+        // Resolves to the new provider's id (the first-run page switches to it once it has a key).
+        async (): Promise<string | undefined> => {
           const added = await add();
           if (added) {
             openEditor(added.id);
           }
+          return added?.id;
         },
         { title: t('addProvider'), category: t('category') },
       ),

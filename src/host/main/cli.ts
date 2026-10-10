@@ -33,6 +33,8 @@ export interface CliArgs {
   readonly devtools: boolean;
   /** Open the window on a display other than the primary one, if there is one (tests do). */
   readonly secondaryDisplay: boolean;
+  /** Do not use VSCodium's or VS Code's copy of the extension (tests of the first run do). */
+  readonly ignoreOtherEditors: boolean;
   readonly help: boolean;
   readonly version: boolean;
 }
@@ -89,6 +91,7 @@ export function parseCliArgs(argv: readonly string[], cwd = process.cwd()): CliA
       theme: { type: 'string' },
       devtools: { type: 'boolean' },
       'secondary-display': { type: 'boolean' },
+      'ignore-other-editors': { type: 'boolean' },
       help: { type: 'boolean', short: 'h' },
       version: { type: 'boolean', short: 'v' },
     },
@@ -113,6 +116,7 @@ export function parseCliArgs(argv: readonly string[], cwd = process.cwd()): CliA
     theme: str(values.theme),
     devtools: values.devtools === true,
     secondaryDisplay: values['secondary-display'] === true,
+    ignoreOtherEditors: values['ignore-other-editors'] === true,
     help: values.help === true,
     version: values.version === true,
   };

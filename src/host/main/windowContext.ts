@@ -44,7 +44,8 @@ export interface WindowHost {
   readonly theme: ThemeData;
   /** The extension UI's translations in this run's language, if there are any. */
   readonly extensionTable: ExtensionTranslations | undefined;
-  readonly extension: LocatedExtension;
+  /** Undefined until the extension is installed: the window then has no extension host. */
+  readonly extension: LocatedExtension | undefined;
   appInfo(): AppInfo;
   openExternal(url: string): Promise<boolean>;
   /** The zoom level all windows share. */
@@ -218,7 +219,7 @@ export class WindowContext extends Disposable {
     const { response } = await dialog.showMessageBox(this.browserWindow, {
       type: 'error',
       message: t('extensionFailedToStart'),
-      detail: `${message}\n\n${t('rollBackOffer', this.host.extension.version, target)}`,
+      detail: `${message}\n\n${t('rollBackOffer', this.host.extension?.version ?? '', target)}`,
       buttons: [t('rollBackAndRestart', target), t('close')],
       defaultId: 0,
       cancelId: 1,
@@ -299,6 +300,13 @@ export class WindowContext extends Disposable {
     return this.startExtHost();
   }
 
+  /** The extension was installed for the first time while this window was open without it. */
+  startMissingExtensionHost(): void {
+    if (!this.extHost && !this.shutdownPromise) {
+      void this.startExtHost().catch((error: unknown) => this.logger.error('failed to start extension host', error));
+    }
+  }
+
   /**
    * Stops the extension host (the extension records its open conversations and stops its
    * Claude processes) and saves the workspace state. The window stays until `destroy`.
@@ -357,7 +365,13 @@ export class WindowContext extends Disposable {
   }
 
   private async startExtHost(): Promise<void> {
+    const extension = this.host.extension;
     if (this.shutdownPromise) {
+      return;
+    }
+    if (!extension) {
+      // The page shows the first-run page; the host starts once the extension is installed.
+      this.logger.info('no Claude Code extension yet: no extension host');
       return;
     }
     if (this.extHost) {
@@ -388,7 +402,7 @@ export class WindowContext extends Disposable {
     });
 
     const { port1, port2 } = new MessageChannelMain();
-    await extHost.rpc.call('init', this.createInitData(), [port1]);
+    await extHost.rpc.call('init', this.createInitData(extension), [port1]);
     this.window.sendExtHostPort(port2);
     this.window.emit('extensionHostState', { state: 'running' });
     this.initialized = true;
@@ -425,10 +439,10 @@ export class WindowContext extends Disposable {
     rpc.handle('settings.set', ({ key, value }) => host.settings.set(key, value));
   }
 
-  private createInitData(): ExtHostInitData {
+  private createInitData(extension: LocatedExtension): ExtHostInitData {
     const paths = this.host.env.paths;
     return {
-      extensionPath: this.host.extension.path,
+      extensionPath: extension.path,
       workspaceFolders: this.folders,
       paths: {
         userData: paths.root,

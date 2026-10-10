@@ -32,10 +32,12 @@ import { TRANSLATE_EXTENSION_UI_SETTING, translateExtensionUi } from '../../plat
 import {
   IpcChannel,
   type AppInfo,
+  type ExtensionInstallResult,
   type ExtensionTranslations,
   type MainApiForRenderer,
   type MainEventsForRenderer,
   type ProvidersState,
+  type StartupNotices,
   type ThemeData,
 } from '../../platform/protocol';
 import {
@@ -54,6 +56,7 @@ import type { CliArgs } from './cli';
 import { locateClaudeExtension, type LocatedExtension } from './extensionLocator';
 import { ExtensionStore } from './extensionStore';
 import { ExtensionUpdater, type UpdateSettings } from './extensionUpdater';
+import { findGit } from './gitLocator';
 import { t } from './messages';
 import { ProviderStore, type SecretCipher } from './providerStore';
 import { SettingsStore } from './settingsStore';
@@ -88,6 +91,8 @@ const THEME_SETTING_KEYS = new Set([
 const FIRST_UPDATE_CHECK_MS = 15_000;
 const UPDATE_CHECK_INTERVAL_MS = 12 * 60 * 60_000;
 const UPDATE_SETTING_KEYS = [AUTO_UPDATE_SETTING, PINNED_VERSION_SETTING, OPEN_VSX_URL_SETTING];
+/** In state/shell.json: the missing-Git notice was shown (it is shown once). */
+const GIT_NOTICE_KEY = 'gitNoticeShown';
 /** Where the one window's placement and zoom were kept before there were several windows. */
 const LEGACY_WINDOW_STATE_KEY = 'vilaus.window';
 
@@ -184,16 +189,15 @@ export class ShellApp extends Disposable implements WindowHost {
     return this.currentZoom;
   }
 
-  get extension(): LocatedExtension {
-    if (!this.located) {
-      throw new Error('the Claude Code extension has not been located');
-    }
+  /** Undefined until the extension is installed (the windows show the first-run page meanwhile). */
+  get extension(): LocatedExtension | undefined {
     return this.located;
   }
 
   async start(): Promise<void> {
+    const { extensionDir, ignoreOtherEditors } = this.env.args;
     // A version installed last run becomes current now, before any extension host loads it.
-    this.located = locateClaudeExtension(this.env.args.extensionDir, this.extensionStore.prepare());
+    this.located = locateClaudeExtension(extensionDir, this.extensionStore.prepare(), !ignoreOtherEditors);
     const updater = this.register(
       new ExtensionUpdater({
         store: this.extensionStore,
@@ -201,19 +205,23 @@ export class ShellApp extends Disposable implements WindowHost {
         targetPlatform: this.extensionStore.targetPlatform,
         running: this.located,
         // Another editor's copy, whichever runs: the version to go back to after the first update.
-        external: locateClaudeExtension(),
+        external: ignoreOtherEditors ? undefined : locateClaudeExtension(),
         settings: () => this.updateSettings(),
         logger: this.logger.child('extensions'),
       }),
     );
     this.updater = updater;
     this.register(updater.onDidChange(() => this.broadcast('extensionStatus', updater.status())));
-    if (!this.located) {
-      dialog.showErrorBox('Vilausity', t('extensionNotFound'));
+    if (this.located) {
+      this.logger.info(`Claude Code ${this.located.version} from ${this.located.path} (via ${this.located.source})`);
+    } else if (extensionDir) {
+      // A developer's mistake: say so rather than offer to install.
+      dialog.showErrorBox('Vilausity', t('extensionDirInvalid', extensionDir));
       app.quit();
       return;
+    } else {
+      this.logger.info('Claude Code is not installed: the windows show the first-run page');
     }
-    this.logger.info(`Claude Code ${this.located.version} from ${this.located.path} (via ${this.located.source})`);
 
     installCcwProtocol(session.defaultSession, {
       appDir: path.join(this.env.appDir, 'renderer'),
@@ -599,10 +607,13 @@ export class ShellApp extends Disposable implements WindowHost {
     );
   }
 
-  /** Installs what Open VSX offers, if automatic updates are on; the version is used from the next start. */
+  /**
+   * Installs what Open VSX offers, if automatic updates are on; the version is used from the
+   * next start. Not before the first install: the first-run page asks for that.
+   */
   private checkForUpdatesAutomatically(): void {
     const updater = this.updater;
-    if (!updater?.updatesApply || this.settings.all[AUTO_UPDATE_SETTING] === false || this.quitting) {
+    if (!this.located || !updater?.updatesApply || this.settings.all[AUTO_UPDATE_SETTING] === false || this.quitting) {
       return;
     }
     void updater.check(false).then((result) => {
@@ -690,7 +701,7 @@ export class ShellApp extends Disposable implements WindowHost {
       'providers.setKey': ({ id, key }) => this.providers.setKey(id, key),
       'providers.createShortcut': ({ id }) => this.createShortcut(id),
       'extension.status': () => this.requireUpdater().status(),
-      'extension.check': () => this.requireUpdater().check(true),
+      'extension.check': async () => this.afterInstall(await this.requireUpdater().check(true)),
       'extension.installFile': async (_params, window) => {
         const picked = await dialog.showOpenDialog(window.browserWindow, {
           title: t('installVsixTitle'),
@@ -698,9 +709,10 @@ export class ShellApp extends Disposable implements WindowHost {
           filters: [{ name: t('vsixFiles'), extensions: ['vsix'] }],
         });
         const file = picked.canceled ? undefined : picked.filePaths[0];
-        return file ? this.requireUpdater().installFile(file) : { outcome: 'cancelled' };
+        return file ? this.afterInstall(await this.requireUpdater().installFile(file)) : { outcome: 'cancelled' };
       },
       'extension.rollBack': () => this.requireUpdater().rollBack(),
+      'app.startupNotices': () => this.startupNotices(),
       'window.setKeybindings': ({ chords }, window) => window.window.setInterceptedChords(chords),
       'window.zoom': ({ delta }) => {
         // One level for all windows: Chromium zooms pages of the same origin together anyway.
@@ -728,6 +740,37 @@ export class ShellApp extends Disposable implements WindowHost {
       return handler(params, window);
     });
     this.register(toDisposable(() => ipcMain.removeHandler(IpcChannel.Rpc)));
+  }
+
+  /**
+   * After an install from the settings or the first-run page: when nothing ran before (the
+   * first install), the extension starts now in every window; no restart is needed.
+   */
+  private async afterInstall(result: ExtensionInstallResult): Promise<ExtensionInstallResult> {
+    if (result.outcome !== 'installed' || this.located) {
+      return result;
+    }
+    const { extensionDir, ignoreOtherEditors } = this.env.args;
+    const located = locateClaudeExtension(extensionDir, this.extensionStore.prepare(), !ignoreOtherEditors);
+    if (located) {
+      this.located = located;
+      this.logger.info(`Claude Code ${located.version} installed; starting it in every window`);
+      this.requireUpdater().setRunning(located);
+      for (const window of this.windows) {
+        window.startMissingExtensionHost();
+      }
+    }
+    return result;
+  }
+
+  /** What the page shows once, at the first start that finds it: Git missing, say. */
+  private startupNotices(): StartupNotices {
+    const shown = this.shellState.get(GIT_NOTICE_KEY) === true;
+    const gitMissing = !shown && findGit(process.env, isFile) === undefined;
+    if (gitMissing) {
+      this.shellState.set(GIT_NOTICE_KEY, true);
+    }
+    return { gitMissing };
   }
 
   private requireUpdater(): ExtensionUpdater {

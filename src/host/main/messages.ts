@@ -11,8 +11,7 @@ export const t = defineMessages('main', {
   selectAll: 'Select All',
   openLink: 'Open Link in Browser',
   copyLink: 'Copy Link Address',
-  extensionNotFound:
-    'The Claude Code extension was not found. Install it in VSCodium, or pass --extension-dir <folder>.',
+  extensionDirInvalid: 'There is no Claude Code extension in {0} (--extension-dir).',
   extensionFailedToStart: 'Claude Code failed to start',
   rollBackOffer: 'Claude Code {0} has not worked here before. Go back to {1}, the version used before it?',
   rollBackAndRestart: 'Go Back to {0} and Restart',

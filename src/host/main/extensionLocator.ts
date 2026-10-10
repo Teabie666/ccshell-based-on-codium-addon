@@ -29,12 +29,17 @@ interface RegistryEntry {
   relativeLocation?: string;
 }
 
-export function locateClaudeExtension(explicitDir?: string, managed?: LocatedExtension): LocatedExtension | undefined {
+/** `otherEditors: false` stops after the managed copy (tests of the first run). */
+export function locateClaudeExtension(
+  explicitDir?: string,
+  managed?: LocatedExtension,
+  otherEditors = true,
+): LocatedExtension | undefined {
   if (explicitDir) {
     const version = readVersion(explicitDir);
     return version ? { path: explicitDir, version, source: '--extension-dir', kind: 'cli' } : undefined;
   }
-  if (managed) {
+  if (managed || !otherEditors) {
     return managed;
   }
   for (const dir of candidateExtensionDirs()) {

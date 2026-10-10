@@ -34,7 +34,7 @@ function isSecondStart(value: unknown): value is SecondStart {
 
 function versionText(args: CliArgs, paths: AppPaths): string {
   const store = new ExtensionStore(paths.extensionsDir, targetPlatformOf(process.platform, process.arch), NullLogger);
-  const extension = locateClaudeExtension(args.extensionDir, store.currentCopy());
+  const extension = locateClaudeExtension(args.extensionDir, store.currentCopy(), !args.ignoreOtherEditors);
   return [
     `Vilausity ${app.getVersion()}`,
     `Electron ${process.versions.electron}, Chromium ${process.versions.chrome}, Node ${process.versions.node}`,

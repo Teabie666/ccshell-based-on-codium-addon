@@ -406,6 +406,12 @@ export interface ExtensionStatus {
   readonly updatesApply: boolean;
 }
 
+/** What the page shows once, at the first start that finds it. */
+export interface StartupNotices {
+  /** Git for Windows is not on PATH (Claude then runs commands in PowerShell). */
+  readonly gitMissing: boolean;
+}
+
 /** The API providers (without keys) and the one this window uses. */
 export interface ProvidersState {
   readonly providers: readonly ProviderSummary[];
@@ -583,6 +589,8 @@ export type MainApiForRenderer = {
   'app.relaunch': (p: void) => void;
   /** Closes every window; they all open again at the next start. */
   'app.quit': (p: void) => void;
+  /** Notices to show once; the first window to ask gets them. */
+  'app.startupNotices': (p: void) => StartupNotices;
   'os.openExternal': (p: { url: string }) => boolean;
   /** A system notification; also flashes the taskbar button. Only shown while unfocused. */
   'os.notify': (p: { title: string; body: string }) => void;
