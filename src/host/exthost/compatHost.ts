@@ -17,6 +17,7 @@ import type {
   ExtHostInitData,
   MainApiForExtHost,
   RendererApiForExtHost,
+  StorageScope,
 } from '../../platform/protocol';
 
 export type MainRpc = RpcEndpoint<ExtHostApiForMain, MainApiForExtHost, MessagePortMain>;
@@ -28,6 +29,8 @@ export interface CompatHostHandle {
   readonly host: CompatHost;
   /** Main reported that settings.json changed. */
   settingsChanged(settings: Readonly<Record<string, unknown>>, keys: readonly string[]): void;
+  /** Main reported a stored value another window changed. */
+  storageChanged(scope: StorageScope, key: string, value: unknown): void;
 }
 
 class FileAppender implements OutputSink {
@@ -65,6 +68,21 @@ export function createCompatHost(options: {
 
   let settingsValues: Readonly<Record<string, unknown>> = init.settings;
   const settingsEmitter = new Emitter<{ readonly keys: readonly string[] }>();
+
+  // Kept current with this host's writes and other windows' changes, so a Memento created
+  // late still starts from the latest values.
+  const stored: Record<StorageScope, Record<string, unknown>> = {
+    global: { ...init.globalState },
+    workspace: { ...init.workspaceState },
+  };
+  const storageEmitter = new Emitter<{ scope: StorageScope; key: string; value: unknown }>();
+  const storeValue = (scope: StorageScope, key: string, value: unknown): void => {
+    if (value === undefined) {
+      delete stored[scope][key];
+    } else {
+      stored[scope][key] = value;
+    }
+  };
 
   const webviewMessages = new Emitter<{ webviewId: string; message: unknown }>();
   const webviewStates = new Emitter<{ webviewId: string; state: unknown }>();
@@ -117,8 +135,12 @@ export function createCompatHost(options: {
     },
 
     storage: {
-      initial: (scope) => (scope === 'global' ? init.globalState : init.workspaceState),
-      set: (scope, key, value) => main.notify('storage.set', { scope, key, value }),
+      initial: (scope) => ({ ...stored[scope] }),
+      set: (scope, key, value) => {
+        storeValue(scope, key, value);
+        main.notify('storage.set', { scope, key, value });
+      },
+      onDidChange: storageEmitter.event,
     },
 
     os: {
@@ -215,6 +237,10 @@ export function createCompatHost(options: {
     settingsChanged(settings, keys) {
       settingsValues = settings;
       settingsEmitter.fire({ keys });
+    },
+    storageChanged(scope, key, value) {
+      storeValue(scope, key, value);
+      storageEmitter.fire({ scope, key, value });
     },
   };
 }

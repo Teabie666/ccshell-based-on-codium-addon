@@ -10,7 +10,7 @@ import {
   sanitizeComments,
   type CommentPanels,
 } from '../../../src/host/exthost/comments';
-import { Emitter } from '../../../src/platform/event';
+import { Emitter, Event } from '../../../src/platform/event';
 import type { CommentDto } from '../../../src/platform/protocol';
 
 function comment(id: string, overrides: Partial<CommentDto> = {}): CommentDto {
@@ -70,6 +70,7 @@ function setup(saved?: unknown) {
         writes.push(value);
       }
     },
+    onDidChange: Event.None,
   };
   const comments = new ConversationComments(panels, sessionOf, storage);
   const ids = (webviewId: string): string[] => comments.list(webviewId).map((c) => c.id);

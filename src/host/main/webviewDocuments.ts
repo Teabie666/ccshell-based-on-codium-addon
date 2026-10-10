@@ -8,7 +8,8 @@
 import type { ExtensionTranslations, ThemeData, WebviewBootstrapData, WebviewDocument } from '../../platform/protocol';
 
 export class WebviewDocumentStore {
-  private readonly documents = new Map<string, WebviewDocument>();
+  /** Webview ids are random, so the documents of every window share one map. */
+  private readonly documents = new Map<string, { readonly document: WebviewDocument; readonly owner?: string }>();
 
   constructor(
     private readonly bootstrapSource: string,
@@ -17,18 +18,28 @@ export class WebviewDocumentStore {
     private readonly getTranslations: () => ExtensionTranslations | undefined = () => undefined,
   ) {}
 
-  set(document: WebviewDocument): void {
-    this.documents.set(document.webviewId, document);
+  /** `owner`: whose webview it is (a window), so its documents can go when it does. */
+  set(document: WebviewDocument, owner?: string): void {
+    this.documents.set(document.webviewId, { document, owner });
   }
 
   release(webviewId: string): void {
     this.documents.delete(webviewId);
   }
 
+  /** Forgets every document of one owner (its extension host restarted, or the window closed). */
+  releaseOwner(owner: string): void {
+    for (const [webviewId, entry] of this.documents) {
+      if (entry.owner === owner) {
+        this.documents.delete(webviewId);
+      }
+    }
+  }
+
   /** Union of every live webview's resource roots; `ccw://res/` serves only files under these. */
   resourceRoots(): string[] {
     const roots = new Set<string>();
-    for (const document of this.documents.values()) {
+    for (const { document } of this.documents.values()) {
       for (const root of document.resourceRoots) {
         roots.add(root);
       }
@@ -37,7 +48,7 @@ export class WebviewDocumentStore {
   }
 
   render(webviewId: string): string | undefined {
-    const document = this.documents.get(webviewId);
+    const document = this.documents.get(webviewId)?.document;
     if (!document) {
       return undefined;
     }

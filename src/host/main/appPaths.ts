@@ -15,6 +15,8 @@ export interface AppPaths {
   readonly logsRoot: string;
   /** Logs for this run only. */
   readonly sessionLogs: string;
+  /** One window's logs in this run (its extension host's): `window1`, `window2`... */
+  windowLogs(windowId: number): string;
   /** `ExtensionContext.globalStorageUri` for the Claude Code extension. */
   readonly extensionGlobalStorage: string;
   workspaceStateFile(workspaceKey: string): string;
@@ -28,13 +30,15 @@ const KEPT_LOG_SESSIONS = 10;
 export function createAppPaths(root: string, startedAt = new Date()): AppPaths {
   const stamp = startedAt.toISOString().replace(/[-:]/g, '').replace(/\..+$/, '');
   const logsRoot = path.join(root, 'logs');
+  const sessionLogs = path.join(logsRoot, stamp);
   return {
     root,
     settingsFile: path.join(root, 'settings.json'),
     globalStateFile: path.join(root, 'state', 'global.json'),
     chromium: path.join(root, 'chromium'),
     logsRoot,
-    sessionLogs: path.join(logsRoot, stamp),
+    sessionLogs,
+    windowLogs: (windowId) => path.join(sessionLogs, `window${windowId}`),
     extensionGlobalStorage: path.join(root, 'globalStorage', EXTENSION_ID),
     workspaceStateFile: (key) => path.join(root, 'state', 'workspaces', `${key}.json`),
     extensionWorkspaceStorage: (key) => path.join(root, 'workspaceStorage', key, EXTENSION_ID),

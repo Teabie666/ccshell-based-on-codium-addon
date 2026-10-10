@@ -246,7 +246,7 @@ await step('insert_at_mention puts plain text into the input', async () => {
 await step('io_message shape was logged', async () => {
   const logs = path.join(dataDir, 'logs');
   const session = readdirSync(logs).sort().at(-1);
-  const log = readFileSync(path.join(logs, session, 'exthost.log'), 'utf8');
+  const log = readFileSync(path.join(logs, session, 'window1', 'exthost.log'), 'utf8');
   const line = log.split('\n').find((l) => l.includes('io_message shape:'));
   if (!line) throw new Error('no io_message shape line in exthost.log');
   return line.slice(line.indexOf('io_message shape:'));
@@ -368,7 +368,7 @@ await step('in plan mode, the plan preview opens as a content pane tab', async (
 await page.screenshot({ path: path.join(runDir, 'final.png') });
 await app.close();
 
-const unimplemented = path.join(dataDir, 'logs', readdirSync(path.join(dataDir, 'logs')).sort().at(-1), 'shim-unimplemented.log');
+const unimplemented = path.join(dataDir, 'logs', readdirSync(path.join(dataDir, 'logs')).sort().at(-1), 'window1', 'shim-unimplemented.log');
 if (existsSync(unimplemented)) {
   const lines = readFileSync(unimplemented, 'utf8').trim();
   console.log(`\nunimplemented API used:\n${lines || '(none)'}`);

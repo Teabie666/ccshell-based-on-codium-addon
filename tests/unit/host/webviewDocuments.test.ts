@@ -138,4 +138,16 @@ describe('WebviewDocumentStore', () => {
     assert.equal(store.render('a'), undefined);
     assert.deepEqual(store.resourceRoots(), []);
   });
+
+  test("releaseOwner drops one window's documents and keeps the others'", () => {
+    const store = new WebviewDocumentStore('BOOT', () => theme);
+    store.set(makeDoc('a', '<html></html>', ['/a']), 'window1');
+    store.set(makeDoc('b', '<html></html>', ['/b']), 'window2');
+    store.set(makeDoc('c', '<html></html>', ['/c']), 'window1');
+    store.releaseOwner('window1');
+    assert.equal(store.render('a'), undefined);
+    assert.equal(store.render('c'), undefined);
+    assert.ok(store.render('b'));
+    assert.deepEqual(store.resourceRoots(), ['/b']);
+  });
 });

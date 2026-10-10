@@ -373,6 +373,11 @@ export type MainApiForExtHost = {
 export type ExtHostApiForMain = {
   init: (p: ExtHostInitData) => void;
   'settings.didChange': (p: { settings: Readonly<Record<string, unknown>>; keys: readonly string[] }) => void;
+  /**
+   * Another window's extension host changed a stored value. Global state is shared by all
+   * windows (VS Code syncs `globalState` across windows too); `value: undefined` deleted it.
+   */
+  'storage.didChange': (p: { scope: StorageScope; key: string; value: unknown }) => void;
   shutdown: (p: void) => void;
 };
 

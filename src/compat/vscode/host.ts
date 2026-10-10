@@ -49,8 +49,11 @@ export interface SettingsBackend {
 }
 
 export interface StorageBackend {
+  /** The stored values now, including changes made elsewhere since startup. */
   initial(scope: StorageScope): Readonly<Record<string, unknown>>;
   set(scope: StorageScope, key: string, value: unknown): void;
+  /** A value changed elsewhere (global state is shared with other windows); `undefined` deleted it. */
+  readonly onDidChange: Event<{ readonly scope: StorageScope; readonly key: string; readonly value: unknown }>;
 }
 
 export interface OsBackend {

@@ -65,6 +65,7 @@ main.handle('init', (init, ports) => {
 });
 
 main.handle('settings.didChange', ({ settings, keys }) => host?.settingsChanged(settings, keys));
+main.handle('storage.didChange', ({ scope, key, value }) => host?.storageChanged(scope, key, value));
 
 main.handle('shutdown', async () => {
   logger.info('shutdown requested');

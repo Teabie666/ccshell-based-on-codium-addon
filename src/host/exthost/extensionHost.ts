@@ -14,7 +14,7 @@ import { Uri } from '../../compat/vscode/uri';
 import { RpcEndpoint, type MessageTransport } from '../../platform/ipc';
 import { toDisposable } from '../../platform/lifecycle';
 import type { ILogger } from '../../platform/log';
-import type { ExtHostInitData } from '../../platform/protocol';
+import type { ExtHostInitData, StorageScope } from '../../platform/protocol';
 import { ClaudeWebviewBridge, conversationSessionId } from './bridge';
 import { ConversationComments, registerCommentRequests } from './comments';
 import { PanelRestore } from './panelRestore';
@@ -121,6 +121,10 @@ export class ExtensionHost {
 
   settingsChanged(settings: Readonly<Record<string, unknown>>, keys: readonly string[]): void {
     this.compat?.settingsChanged(settings, keys);
+  }
+
+  storageChanged(scope: StorageScope, key: string, value: unknown): void {
+    this.compat?.storageChanged(scope, key, value);
   }
 
   async shutdown(): Promise<void> {

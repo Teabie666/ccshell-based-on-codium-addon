@@ -1,0 +1,274 @@
+/**
+ * One window and what belongs to it alone: its workspace (folders and workspace state),
+ * the BrowserWindow, and the extension host that serves it. What the windows share
+ * (settings, global state, theme, webview documents, the extension) stays in ShellApp,
+ * which a window reaches through `WindowHost`.
+ */
+
+import * as path from 'node:path';
+import { app, clipboard, dialog, MessageChannelMain, type BrowserWindow, type WebContents } from 'electron';
+import { Disposable } from '../../platform/lifecycle';
+import type { ILogger } from '../../platform/log';
+import type { UiLanguage } from '../../platform/nls';
+import type {
+  AppInfo,
+  ExtensionTranslations,
+  ExtHostInitData,
+  MainEventsForRenderer,
+  RendererInitData,
+  ThemeData,
+} from '../../platform/protocol';
+import { workspaceKey } from '../node/paths';
+import type { LocatedExtension } from './extensionLocator';
+import { ExtHostProcess } from './extHostProcess';
+import { t } from './messages';
+import type { SettingsStore } from './settingsStore';
+import type { ShellEnvironment } from './shellApp';
+import { ShellWindow, type WindowState } from './shellWindow';
+import { StateStore } from './stateStore';
+import type { WebviewDocumentStore } from './webviewDocuments';
+
+/** What a window needs from the application. */
+export interface WindowHost {
+  readonly env: ShellEnvironment;
+  readonly settings: SettingsStore;
+  readonly globalState: StateStore;
+  readonly documents: WebviewDocumentStore;
+  readonly language: UiLanguage;
+  readonly theme: ThemeData;
+  /** The extension UI's translations in this run's language, if there are any. */
+  readonly extensionTable: ExtensionTranslations | undefined;
+  readonly extension: LocatedExtension;
+  appInfo(): AppInfo;
+  openExternal(url: string): Promise<boolean>;
+  /** This window's extension host changed a global state value; the other windows' hosts need it too. */
+  globalStateChanged(source: WindowContext, key: string, value: unknown): void;
+  /** The user closed the window (its close button, Alt+F4). */
+  requestClose(window: WindowContext): void;
+}
+
+export interface WindowOptions {
+  /** 1, 2, ... in the order windows open during this run; names the window's log folder. */
+  readonly id: number;
+  readonly folder: string;
+  readonly state: WindowState;
+}
+
+export class WindowContext extends Disposable {
+  readonly id: number;
+  readonly folders: readonly string[];
+  readonly workspaceKey: string;
+  readonly workspaceState: StateStore;
+  readonly window: ShellWindow;
+  private readonly logger: ILogger;
+  private readonly logsDir: string;
+  /** Marks this window's webview documents in the shared store. */
+  private readonly documentOwner: string;
+  private extHost: ExtHostProcess | undefined;
+  private shutdownPromise: Promise<void> | undefined;
+
+  constructor(
+    private readonly host: WindowHost,
+    options: WindowOptions,
+  ) {
+    super();
+    const env = host.env;
+    this.id = options.id;
+    this.documentOwner = `window${options.id}`;
+    this.logger = env.logger.child(`window${options.id}`);
+    this.logsDir = env.paths.windowLogs(options.id);
+    this.folders = [options.folder];
+    this.workspaceKey = workspaceKey(this.folders);
+    this.workspaceState = new StateStore(
+      env.paths.workspaceStateFile(this.workspaceKey),
+      this.logger.child('state'),
+    );
+    this.window = this.register(
+      new ShellWindow({
+        theme: host.theme,
+        preloadPath: path.join(env.appDir, 'preload.js'),
+        logger: this.logger,
+        openDevTools: env.args.devtools,
+        secondaryDisplay: env.args.secondaryDisplay,
+        state: options.state,
+        openExternal: (url) => void host.openExternal(url),
+      }),
+    );
+    this.webContents.on('did-finish-load', () => {
+      void this.startExtHost().catch((error: unknown) => this.logger.error('failed to start extension host', error));
+    });
+    this.browserWindow.on('close', (event) => {
+      if (this.shutdownPromise) {
+        return;
+      }
+      event.preventDefault();
+      host.requestClose(this);
+    });
+  }
+
+  get browserWindow(): BrowserWindow {
+    return this.window.window;
+  }
+
+  get webContents(): WebContents {
+    return this.window.window.webContents;
+  }
+
+  load(): Promise<void> {
+    return this.window.load();
+  }
+
+  emit<K extends keyof MainEventsForRenderer>(name: K, payload: MainEventsForRenderer[K]): void {
+    this.window.emit(name, payload);
+  }
+
+  rendererInitData(): RendererInitData {
+    return {
+      theme: this.host.theme,
+      workspaceFolders: this.folders,
+      appVersion: app.getVersion(),
+      language: this.host.language,
+    };
+  }
+
+  /** settings.json changed: both the page and the extension host read settings. */
+  settingsChanged(keys: readonly string[]): void {
+    const values = this.host.settings.all;
+    this.extHost?.rpc.notify('settings.didChange', { settings: values, keys });
+    this.window.emit('settingsChanged', { values, keys });
+  }
+
+  /** Another window changed a global state value. */
+  globalStateChanged(key: string, value: unknown): void {
+    this.extHost?.rpc.notify('storage.didChange', { scope: 'global', key, value });
+  }
+
+  setTheme(theme: ThemeData): void {
+    this.window.setTheme(theme);
+    this.window.emit('themeChanged', theme);
+  }
+
+  /** After a crash (the page's restart button). */
+  restartExtensionHost(): Promise<void> {
+    return this.startExtHost();
+  }
+
+  /**
+   * Stops the extension host (the extension records its open conversations and stops its
+   * Claude processes) and saves the workspace state. The window stays until `destroy`.
+   */
+  shutdown(): Promise<void> {
+    this.shutdownPromise ??= (async () => {
+      await this.extHost?.shutdown();
+      this.host.documents.releaseOwner(this.documentOwner);
+      await this.workspaceState.flush();
+    })();
+    return this.shutdownPromise;
+  }
+
+  destroy(): void {
+    if (!this.browserWindow.isDestroyed()) {
+      this.browserWindow.destroy();
+    }
+    this.extHost?.dispose();
+    this.dispose();
+  }
+
+  /** Synchronous last-chance persistence for abrupt exits. */
+  flushSync(): void {
+    this.workspaceState.flushSync();
+  }
+
+  private async startExtHost(): Promise<void> {
+    if (this.shutdownPromise) {
+      return;
+    }
+    if (this.extHost) {
+      // The page reloaded (or the host crashed): its webviews are gone, so start from a clean host.
+      this.logger.info('restarting extension host');
+      const previous = this.extHost;
+      this.extHost = undefined;
+      await previous.shutdown();
+      previous.dispose();
+      this.host.documents.releaseOwner(this.documentOwner);
+    }
+    const extHost = await ExtHostProcess.start(
+      path.join(this.host.env.appDir, 'exthost.js'),
+      this.logger.child('exthost-process'),
+    );
+    if (this.shutdownPromise) {
+      // The window closed while the process was starting.
+      await extHost.shutdown();
+      extHost.dispose();
+      return;
+    }
+    this.extHost = extHost;
+    this.registerExtHostHandlers(extHost);
+    extHost.onDidExit(({ expected, code }) => {
+      if (!expected && !this.shutdownPromise && this.extHost === extHost) {
+        // The page shows a banner with a restart button (app.restartExtensionHost).
+        this.window.emit('extensionHostState', {
+          state: 'crashed',
+          detail: t('extensionHostExited', code ?? '?', this.logsDir),
+        });
+      }
+    });
+
+    const { port1, port2 } = new MessageChannelMain();
+    await extHost.rpc.call('init', this.createInitData(), [port1]);
+    this.window.sendExtHostPort(port2);
+    this.window.emit('extensionHostState', { state: 'running' });
+  }
+
+  private registerExtHostHandlers(extHost: ExtHostProcess): void {
+    const rpc = extHost.rpc;
+    const host = this.host;
+    rpc.handle('exthost.activated', ({ extensionVersion }) => {
+      this.logger.info(`Claude Code ${extensionVersion} activated`);
+    });
+    rpc.handle('exthost.activationFailed', ({ message, stack }) => {
+      this.logger.error(`Claude Code failed to activate: ${message}\n${stack ?? ''}`);
+      void dialog.showMessageBox(this.browserWindow, {
+        type: 'error',
+        message: t('extensionFailedToStart'),
+        detail: message,
+      });
+    });
+    rpc.handle('webview.setDocument', (document) => host.documents.set(document, this.documentOwner));
+    rpc.handle('webview.releaseDocument', ({ webviewId }) => host.documents.release(webviewId));
+    rpc.handle('os.openExternal', ({ url }) => host.openExternal(url));
+    rpc.handle('os.clipboardRead', () => clipboard.readText());
+    rpc.handle('os.clipboardWrite', ({ text }) => clipboard.writeText(text));
+    rpc.handle('storage.set', ({ scope, key, value }) => {
+      if (scope === 'workspace') {
+        this.workspaceState.set(key, value);
+        return;
+      }
+      host.globalState.set(key, value);
+      host.globalStateChanged(this, key, value);
+    });
+    rpc.handle('settings.set', ({ key, value }) => host.settings.set(key, value));
+  }
+
+  private createInitData(): ExtHostInitData {
+    const paths = this.host.env.paths;
+    return {
+      extensionPath: this.host.extension.path,
+      workspaceFolders: this.folders,
+      paths: {
+        userData: paths.root,
+        logs: this.logsDir,
+        globalStorage: paths.extensionGlobalStorage,
+        workspaceStorage: paths.extensionWorkspaceStorage(this.workspaceKey),
+      },
+      settings: this.host.settings.all,
+      globalState: this.host.globalState.snapshot,
+      workspaceState: this.workspaceState.snapshot,
+      logLevel: this.host.env.logLevel,
+      app: this.host.appInfo(),
+      themeKind: this.host.theme.kind,
+      // Whatever the setting says now: the extension host follows it as it changes.
+      extensionTranslations: this.host.extensionTable,
+    };
+  }
+}

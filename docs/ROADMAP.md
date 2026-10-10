@@ -150,7 +150,7 @@ M2 试用后加的。原来 PLAN 砍掉了设置图形界面，改为图形界�
 
 ### ① 多窗口、单实例、CLI、文件夹
 
-- [ ] 重构（行为不变）：主进程拆成全局（设置、主题、语言、globalState、webview 文档、ccw 协议）和每个窗口一份（窗口、插件进程、工作区和 workspaceState）；渲染进程的 IPC 按发送的窗口分发，设置 / 主题 / 语言变了通知所有窗口；插件的 globalState 在各窗口的插件进程之间同步；日志按窗口分子目录
+- [x] 重构（行为不变）：主进程拆成全局（设置、主题、语言、globalState、webview 文档、ccw 协议）和每个窗口一份（窗口、插件进程、工作区和 workspaceState）；渲染进程的 IPC 按发送的窗口分发，设置 / 主题 / 语言变了通知所有窗口；插件的 globalState 在各窗口的插件进程之间同步；日志按窗口分子目录
 - [ ] 多窗口：新建窗口、关闭窗口、退出；窗口位置按文件夹记；最近打开的文件夹；退出时记下开着的窗口，不带文件夹启动时恢复（一个个关掉的只恢复最后关的那个，"退出"和重启恢复全部）
 - [x] 已有的参数：`[folder]` / `--folder`、`--extension-dir`、`--user-data-dir`、`--theme`、`--log-level`、`--devtools`、`--secondary-display`（窗口开在非主显示器上，测试用）
 - [ ] 补齐：`--new-window`、`--session`、`--prompt`、`--goto <file:line[:col]>`、`--version`、`--help`（`--provider` 在 ②）
