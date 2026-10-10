@@ -3,6 +3,7 @@
 // Sends no messages to Claude (no usage).   npm run build && node tests/ui.mjs
 import { _electron as electron } from 'playwright-core';
 import electronPath from 'electron';
+import { spawn } from 'node:child_process';
 import { mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 
@@ -835,6 +836,64 @@ await step('Ctrl+Shift+W closes a window; the others stay', async () => {
   await waitFor(() => page.locator('#sidebar').isHidden(), 5000, 'the sidebar to hide');
   await press('Control+B');
   await waitFor(() => page.locator('#sidebar').isVisible(), 5000, 'the sidebar to show');
+});
+
+/** Starts the app again with the same data folder, as a second start would; resolves when that process exits. */
+const startAgain = (...extra) =>
+  new Promise((resolve, reject) => {
+    const child = spawn(electronPath, ['.', '--user-data-dir', dataDir, '--secondary-display', ...extra], {
+      cwd: root,
+      env,
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
+    let out = '';
+    child.stdout.on('data', (chunk) => (out += chunk));
+    child.on('error', reject);
+    child.on('exit', (code) => resolve({ code, out }));
+  });
+
+await step('--version prints the versions and exits', async () => {
+  const { code, out } = await startAgain('--version');
+  if (code !== 0 || !out.includes('Vilausity') || !out.includes('Claude Code')) throw new Error(`exit ${code}: ${out}`);
+  return out.trim().split(/\r?\n/)[0];
+});
+
+await step('a second start hands its folder and --goto to the running instance', async () => {
+  const opened = app.waitForEvent('window');
+  const { code } = await startAgain('--folder', third);
+  if (code !== 0) throw new Error(`the second start exited with ${code}`);
+  const thirdPage = await opened;
+  await waitFor(async () => showsFolder(await thirdPage.title(), third), 30_000, 'a window for the folder');
+  const notes = path.join(third, 'notes.txt');
+  writeFileSync(notes, 'one\ntwo\nthree\n', 'utf8');
+  await startAgain('--goto', `${notes}:2`);
+  const active = thirdPage.locator('#content-pane .content-tab.active .tab-label');
+  await waitFor(async () => (await active.innerText().catch(() => '')) === 'notes.txt', 30_000, 'notes.txt in that window');
+  const closed = thirdPage.waitForEvent('close');
+  await press('Control+Shift+W', third);
+  await closed;
+  return `${shellPages().length} window left`;
+});
+
+await step('--prompt from a second start opens a conversation; a vilaus:// link asks first', async () => {
+  const before = await tabCount();
+  await startAgain('--prompt', 'hello from the command line');
+  await waitFor(async () => (await tabCount()) === before + 1, 30_000, 'a conversation for the prompt');
+  const frame = await waitFor(conversationFrame, 10_000, 'the new conversation');
+  const input = frame.locator('[role="textbox"][aria-label="Message input"]');
+  await waitFor(async () => (await input.innerText().catch(() => '')).includes('hello from the command line'), 20_000, 'the prompt in its input');
+
+  await startAgain('vilaus://anthropic.claude-code/open?prompt=from%20a%20link');
+  const open = page.locator('.modal .button', { hasText: /^Open$/ });
+  await open.waitFor({ timeout: 30_000 });
+  const message = await page.locator('.modal-message').innerText();
+  await open.click();
+  await waitFor(async () => (await tabCount()) === before + 2, 30_000, 'a conversation for the link');
+  for (let i = 0; i < 2; i++) {
+    await press('Control+W');
+    await waitFor(async () => (await tabCount()) === before + 1 - i, 10_000, 'the extra conversation to close');
+  }
+  return message;
 });
 
 await page.screenshot({ path: path.join(runDir, 'final.png') });

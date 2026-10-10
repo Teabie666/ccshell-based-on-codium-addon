@@ -293,6 +293,11 @@ export class SettingsEditorPane implements EditorPane {
     this.search.focus();
   }
 
+  setQuery(query: string): void {
+    this.search.value = query;
+    this.applyFilter();
+  }
+
   relocate(container: HTMLElement): void {
     container.appendChild(this.root);
   }

@@ -8,7 +8,15 @@
 
 import { CommandCategory } from '../../core/messages';
 import type { ShellModule } from '../../core/module';
-import { ICommands, IDialogs, IKeybindings, ILayout, INative, IWorkspace } from '../../core/serviceIds';
+import {
+  ICommands,
+  IDialogs,
+  IExtensionHost,
+  IKeybindings,
+  ILayout,
+  INative,
+  IWorkspace,
+} from '../../core/serviceIds';
 import type { QuickPickItemDto } from '../../platform/protocol';
 import { IContentPane } from '../contentPane';
 import { IConversations } from '../conversations';
@@ -191,5 +199,18 @@ export const workspaceModule: ShellModule = {
     );
     subscriptions.add(keybindings.register({ key: 'ctrl+r', command: 'workspace.openRecent' }));
     subscriptions.add(keybindings.register({ key: 'ctrl+shift+n', command: 'workspace.newWindow' }));
+
+    // The extension's "open folder" buttons (`vscode.openFolder`).
+    subscriptions.add(
+      services.get(IExtensionHost).onDidConnect((rpc) => {
+        rpc.handle('workspace.openFolder', async ({ folder, newWindow }) => {
+          if (!folder) {
+            await browse(newWindow);
+          } else {
+            await (newWindow ? openIn(folder, true) : openHere(folder));
+          }
+        });
+      }),
+    );
   },
 };

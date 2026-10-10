@@ -90,6 +90,17 @@ export interface ExtHostInitData {
   readonly themeKind: ThemeKind;
   /** The extension UI's translations in this run's language (none for English). */
   readonly extensionTranslations?: ExtensionTranslations;
+  /**
+   * A conversation to open once the extension is up (the command line's --session or
+   * --prompt), instead of the new one a window shows when it has none to restore.
+   */
+  readonly openConversation?: ConversationRequest;
+}
+
+/** A conversation to open: a session to continue, and / or a prompt for it. */
+export interface ConversationRequest {
+  readonly sessionId?: string;
+  readonly prompt?: string;
 }
 
 /**
@@ -363,6 +374,8 @@ export type MainApiForExtHost = {
   'os.openExternal': (p: { url: string }) => boolean;
   'os.clipboardRead': (p: void) => string;
   'os.clipboardWrite': (p: { text: string }) => void;
+  /** Shows a file or folder selected in the system's file manager (`revealFileInOS`). */
+  'os.revealFile': (p: { path: string }) => void;
   /** `value: undefined` deletes the key. */
   'storage.set': (p: { scope: StorageScope; key: string; value: unknown }) => void;
   /** `value: undefined` removes the setting. */
@@ -378,6 +391,12 @@ export type ExtHostApiForMain = {
    * windows (VS Code syncs `globalState` across windows too); `value: undefined` deleted it.
    */
   'storage.didChange': (p: { scope: StorageScope; key: string; value: unknown }) => void;
+  /** Opens a conversation once the extension is active (the command line's --session / --prompt). */
+  'conversation.open': (p: ConversationRequest) => void;
+  /** Opens a file in the content pane (the command line's --goto); false if it cannot be read. */
+  'documents.show': (p: { uri: string; selection?: RangeDto }) => boolean;
+  /** A `vilaus://<extension id>/...` link from outside, for the extension's URI handler; asks the user first. */
+  'uri.handle': (p: { uri: string }) => void;
   shutdown: (p: void) => void;
 };
 
@@ -455,6 +474,8 @@ export type RendererApiForExtHost = {
   /** Resolves to the indexes of the chosen items, or undefined if dismissed. */
   'ui.showQuickPick': (p: QuickPickRequest) => number[] | undefined;
   'ui.showInputBox': (p: InputBoxRequest) => string | undefined;
+  /** Whether the extension may open a link that came from outside (a vilaus:// URL). */
+  'ui.confirmOpenUri': (p: { uri: string; extensionName: string }) => boolean;
 
   // ---- documents and editors ----
   /** Opens (or activates) a text tab in the content pane. */
@@ -475,6 +496,12 @@ export type RendererApiForExtHost = {
 
   /** A conversation's comments, oldest first: added, edited, removed, sent or restored. */
   'comments.didChange': (p: { webviewId: string; comments: readonly CommentDto[] }) => void;
+
+  // ---- built-in VS Code commands the extension runs ----
+  /** `vscode.openFolder`: no folder asks for one; not `newWindow` replaces this window's folder. */
+  'workspace.openFolder': (p: { folder?: string; newWindow: boolean }) => void;
+  /** `workbench.action.openSettings`, with the search box filled in. */
+  'workbench.openSettings': (p: { query?: string }) => void;
 };
 
 // ---------------------------------------------------------------------------

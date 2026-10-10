@@ -6,19 +6,22 @@
  */
 
 import * as path from 'node:path';
-import { app, clipboard, dialog, MessageChannelMain, type BrowserWindow, type WebContents } from 'electron';
+import { app, clipboard, dialog, MessageChannelMain, shell, type BrowserWindow, type WebContents } from 'electron';
 import { Disposable } from '../../platform/lifecycle';
 import type { ILogger } from '../../platform/log';
 import type { UiLanguage } from '../../platform/nls';
 import type {
   AppInfo,
+  ConversationRequest,
   ExtensionTranslations,
   ExtHostInitData,
   MainEventsForRenderer,
   RendererInitData,
   ThemeData,
 } from '../../platform/protocol';
+import { URI } from 'vscode-uri';
 import { workspaceKey } from '../node/paths';
+import type { GotoTarget } from './cli';
 import type { LocatedExtension } from './extensionLocator';
 import { ExtHostProcess } from './extHostProcess';
 import { t } from './messages';
@@ -68,6 +71,12 @@ export class WindowContext extends Disposable {
   private currentWorkspaceKey = '';
   private currentWorkspaceState: StateStore | undefined;
   private extHost: ExtHostProcess | undefined;
+  /** The extension host has its init data: it takes requests now. */
+  private initialized = false;
+  /** Requests that wait for the extension host's init. */
+  private readonly afterInit: ((extHost: ExtHostProcess) => void)[] = [];
+  /** Goes into the init data: opens instead of the new conversation an empty window shows. */
+  private pendingConversation: ConversationRequest | undefined;
   private shutdownPromise: Promise<void> | undefined;
 
   constructor(
@@ -139,6 +148,32 @@ export class WindowContext extends Disposable {
 
   focus(): void {
     this.window.focus();
+  }
+
+  /** Opens a conversation (a session, a prompt) once the extension is up. */
+  openConversation(request: ConversationRequest): void {
+    if (this.extHost && this.initialized) {
+      this.request(this.extHost.rpc.call('conversation.open', request), 'opening a conversation');
+    } else {
+      this.pendingConversation = request;
+    }
+  }
+
+  /** Shows a file in the content pane, at a line (1-based) if given. */
+  showFile(target: GotoTarget): void {
+    const position = { line: (target.line ?? 1) - 1, character: (target.column ?? 1) - 1 };
+    const selection = target.line ? { start: position, end: position } : undefined;
+    this.whenInitialized((extHost) =>
+      this.request(
+        extHost.rpc.call('documents.show', { uri: URI.file(target.path).toString(), selection }),
+        `opening ${target.path}`,
+      ),
+    );
+  }
+
+  /** Hands a vilaus:// link to the extension (after the user agrees). */
+  openUri(uri: string): void {
+    this.whenInitialized((extHost) => this.request(extHost.rpc.call('uri.handle', { uri }), `opening ${uri}`));
   }
 
   /**
@@ -224,9 +259,22 @@ export class WindowContext extends Disposable {
     );
   }
 
+  private whenInitialized(action: (extHost: ExtHostProcess) => void): void {
+    if (this.extHost && this.initialized) {
+      action(this.extHost);
+    } else {
+      this.afterInit.push(action);
+    }
+  }
+
+  private request(pending: Promise<unknown>, what: string): void {
+    pending.catch((error: unknown) => this.logger.error(`${what} failed`, error));
+  }
+
   private async stopExtHost(): Promise<void> {
     const previous = this.extHost;
     this.extHost = undefined;
+    this.initialized = false;
     if (previous) {
       await previous.shutdown();
       previous.dispose();
@@ -269,6 +317,10 @@ export class WindowContext extends Disposable {
     await extHost.rpc.call('init', this.createInitData(), [port1]);
     this.window.sendExtHostPort(port2);
     this.window.emit('extensionHostState', { state: 'running' });
+    this.initialized = true;
+    for (const action of this.afterInit.splice(0)) {
+      action(extHost);
+    }
   }
 
   private registerExtHostHandlers(extHost: ExtHostProcess): void {
@@ -290,6 +342,7 @@ export class WindowContext extends Disposable {
     rpc.handle('os.openExternal', ({ url }) => host.openExternal(url));
     rpc.handle('os.clipboardRead', () => clipboard.readText());
     rpc.handle('os.clipboardWrite', ({ text }) => clipboard.writeText(text));
+    rpc.handle('os.revealFile', ({ path: target }) => shell.showItemInFolder(target));
     rpc.handle('storage.set', ({ scope, key, value }) => {
       if (scope === 'workspace') {
         this.workspaceState.set(key, value);
@@ -320,6 +373,13 @@ export class WindowContext extends Disposable {
       themeKind: this.host.theme.kind,
       // Whatever the setting says now: the extension host follows it as it changes.
       extensionTranslations: this.host.extensionTable,
+      openConversation: this.takePendingConversation(),
     };
+  }
+
+  private takePendingConversation(): ConversationRequest | undefined {
+    const request = this.pendingConversation;
+    this.pendingConversation = undefined;
+    return request;
   }
 }

@@ -97,8 +97,12 @@ export const settingsModule: ShellModule = {
         create: (container) => new DefaultSettingsPane(container, editors, settings, logger),
       }),
     );
-    const openUi = (): void => {
-      contentPane.open({ id: SETTINGS_INPUT, typeId: SETTINGS_INPUT, label: t('settingsTitle') }, { preview: false });
+    /** `query` fills the search box (the extension's "open configuration" searches for its settings). */
+    const openUi = (query?: unknown): void => {
+      const tab = contentPane.open({ id: SETTINGS_INPUT, typeId: SETTINGS_INPUT, label: t('settingsTitle') }, { preview: false });
+      if (typeof query === 'string' && tab?.pane instanceof SettingsEditorPane) {
+        tab.pane.setQuery(query);
+      }
     };
 
     // settings.json gets the schema of everything declared, kept current as modules declare more.
@@ -113,6 +117,7 @@ export const settingsModule: ShellModule = {
     const extensionSettings = subscriptions.add(new DisposableStore());
     subscriptions.add(
       connection.onDidConnect((rpc) => {
+        rpc.handle('workbench.openSettings', ({ query }) => openUi(query));
         rpc.call('extension.contributions', undefined).then(
           (contributions) => {
             if (connection.rpc === rpc) {

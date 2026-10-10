@@ -14,13 +14,13 @@ import { Uri } from '../../compat/vscode/uri';
 import { RpcEndpoint, type MessageTransport } from '../../platform/ipc';
 import { toDisposable } from '../../platform/lifecycle';
 import type { ILogger } from '../../platform/log';
-import type { ExtHostInitData, StorageScope } from '../../platform/protocol';
+import type { ConversationRequest, ExtHostInitData, RangeDto, StorageScope } from '../../platform/protocol';
 import { ClaudeWebviewBridge, conversationSessionId } from './bridge';
 import { ConversationComments, registerCommentRequests } from './comments';
 import { PanelRestore } from './panelRestore';
 import { createCompatHost, type CompatHostHandle, type MainRpc, type RendererRpc } from './compatHost';
 import { readContributions } from './contributions';
-import { registerEditorRequests } from './editorRequests';
+import { registerEditorRequests, showDocument } from './editorRequests';
 import { installVSCodeModule } from './requireHook';
 import { registerWorkbenchCommands } from './workbenchCommands';
 
@@ -31,6 +31,11 @@ interface ExtensionModule {
 
 /** The command the panel's "Claude Code" button runs in VS Code. */
 const OPEN_CHAT_COMMAND = 'claude-vscode.editor.open';
+/**
+ * Opens a conversation for a session id and / or with a prompt; the extension's own
+ * `/open?session=&prompt=` links use it too (checked against 2.1.282).
+ */
+const OPEN_CONVERSATION_COMMAND = 'claude-vscode.primaryEditor.open';
 
 function portTransport(port: MessagePortMain): MessageTransport<MessagePortMain> {
   return {
@@ -55,6 +60,13 @@ export class ExtensionHost {
   private markRendererReady: () => void = () => {};
   /** Settles once `activate` has run; true when it succeeded. */
   private activation: Promise<boolean> = Promise.resolve(false);
+  private extensionId = '';
+  private extensionName = '';
+  /**
+   * What to open when the extension is up, instead of a new conversation; empty when a
+   * conversation was asked for separately (the window then opens none of its own).
+   */
+  private openAtStart: ConversationRequest | undefined;
 
   constructor(
     private readonly main: MainRpc,
@@ -84,6 +96,9 @@ export class ExtensionHost {
       unknown
     >;
     const extensionId = `${String(packageJson.publisher)}.${String(packageJson.name)}`.toLowerCase();
+    this.extensionId = extensionId;
+    this.extensionName = typeof packageJson.displayName === 'string' ? packageJson.displayName : extensionId;
+    this.openAtStart = init.openConversation;
     renderer.handle('extension.contributions', () => readContributions(packageJson));
 
     const compat = createCompatHost({
@@ -101,7 +116,7 @@ export class ExtensionHost {
       onShowOutput: (channel) => void this.showLogFile(channel.filePath),
     });
     this.services = services;
-    registerWorkbenchCommands(services.commands);
+    registerWorkbenchCommands(services.commands, { main: this.main, renderer });
     registerEditorRequests(renderer, services, init.workspaceFolders, this.logger.child('editors'));
     const webviews = services.webviews;
     const comments = new ConversationComments(webviews, conversationSessionId, compat.host.storage);
@@ -125,6 +140,46 @@ export class ExtensionHost {
 
   storageChanged(scope: StorageScope, key: string, value: unknown): void {
     this.compat?.storageChanged(scope, key, value);
+  }
+
+  async openConversation(request: ConversationRequest): Promise<void> {
+    // It came after the init data: the window need not open a new conversation of its own.
+    this.openAtStart ??= {};
+    if (await this.ready()) {
+      await this.services?.commands.executeCommand(OPEN_CONVERSATION_COMMAND, request.sessionId, request.prompt);
+    }
+  }
+
+  async showDocument(params: { uri: string; selection?: RangeDto }): Promise<boolean> {
+    await this.rendererReady;
+    const services = this.services;
+    return services
+      ? showDocument(services, { ...params, preserveFocus: false, preview: false }, this.logger.child('editors'))
+      : false;
+  }
+
+  /** A `vilaus://<extension id>/...` link, for the URI handlers the extension registered; asks the user first. */
+  async handleUri(uri: string): Promise<void> {
+    const services = this.services;
+    const renderer = this.renderer;
+    if (!(await this.ready()) || !services || !renderer) {
+      return;
+    }
+    const parsed = Uri.parse(uri);
+    if (parsed.authority.toLowerCase() !== this.extensionId || services.uriHandlers.size === 0) {
+      this.logger.warn(`no URI handler for ${uri}`);
+      return;
+    }
+    if (!(await renderer.call('ui.confirmOpenUri', { uri, extensionName: this.extensionName }))) {
+      return;
+    }
+    for (const handler of services.uriHandlers) {
+      try {
+        await handler.handleUri(parsed);
+      } catch (error) {
+        this.logger.error(`the extension failed to handle ${uri}`, error);
+      }
+    }
   }
 
   async shutdown(): Promise<void> {
@@ -198,8 +253,18 @@ export class ExtensionHost {
   private async openInitialView(services: CompatServices): Promise<void> {
     await this.rendererReady;
     const restored = (await this.panelRestore?.restore()) ?? 0;
-    if (restored === 0 && services.webviews.allPanels.length === 0) {
+    const requested = this.openAtStart;
+    if (requested?.sessionId || requested?.prompt) {
+      await services.commands.executeCommand(OPEN_CONVERSATION_COMMAND, requested.sessionId, requested.prompt);
+    } else if (!requested && restored === 0 && services.webviews.allPanels.length === 0) {
       await services.commands.executeCommand(OPEN_CHAT_COMMAND);
     }
+  }
+
+  /** Resolves once the extension is active and the renderer can show its panels; false if activation failed. */
+  private async ready(): Promise<boolean> {
+    const activated = await this.activation;
+    await this.rendererReady;
+    return activated;
   }
 }

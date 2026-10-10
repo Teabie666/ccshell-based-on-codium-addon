@@ -7,6 +7,8 @@ export const t = defineMessages('core', {
   close: 'Close',
   ok: 'OK',
   cancel: 'Cancel',
+  open: 'Open',
+  confirmOpenUri: "Allow '{0}' to open this link?",
   openConversations: 'Open conversations',
   sessions: 'Sessions',
   startupFailed: 'Vilausity failed to start: {0}',

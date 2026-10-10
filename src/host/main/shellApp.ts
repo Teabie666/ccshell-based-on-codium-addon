@@ -32,6 +32,7 @@ import {
 import { APP_ORIGIN } from '../../platform/webviewUrls';
 import { extensionTranslations } from '../../nls/extensionPacks';
 import { languagePack } from '../../nls/packs';
+import { isSubPath } from '../node/paths';
 import type { AppPaths } from './appPaths';
 import { installCcwProtocol } from './ccwProtocol';
 import type { CliArgs } from './cli';
@@ -177,8 +178,9 @@ export class ShellApp extends Disposable implements WindowHost {
     };
     app.on('before-quit', onBeforeQuit);
     this.register(toDisposable(() => app.off('before-quit', onBeforeQuit)));
+    const args = this.env.args;
     const folders = foldersToOpen({
-      folder: this.env.args.folder ? resolveWorkspaceFolder(this.env.args.folder, this.logger) : undefined,
+      folder: args.folder && !isFile(args.folder) ? resolveWorkspaceFolder(args.folder, this.logger) : undefined,
       restoreAll: this.history.takeRestoreAll(),
       previous: this.history.openWindows(),
       exists: isDirectory,
@@ -187,6 +189,12 @@ export class ShellApp extends Disposable implements WindowHost {
     for (const folder of folders) {
       await this.openWindow(folder);
     }
+    await this.applyCommandLine(args, true);
+  }
+
+  /** A second start's arguments: its folder, file, conversation or link, in the right window. */
+  handleCommandLine(args: CliArgs): Promise<void> {
+    return this.applyCommandLine(args, false);
   }
 
   /** Opens `folder` in a window of its own, or brings the window that shows it to the front. */
@@ -314,6 +322,42 @@ export class ShellApp extends Disposable implements WindowHost {
       this.rememberOpenWindows();
     }
     return true;
+  }
+
+  /**
+   * Where a start's arguments go: a folder to its own window; a file (positional or
+   * --goto) to the window whose folder holds it, else the active one; nothing to the
+   * active window (a new one with --new-window, for a second start).
+   */
+  private async applyCommandLine(args: CliArgs, initial: boolean): Promise<void> {
+    const file = args.folder && isFile(args.folder) ? args.folder : undefined;
+    const folder = args.folder && !file && isDirectory(args.folder) ? args.folder : undefined;
+    const goto = args.goto ?? (file ? { path: file } : undefined);
+    let window: WindowContext | undefined;
+    if (folder) {
+      window = await this.openWindow(folder);
+    } else if (goto) {
+      window = this.windows.find((candidate) => isSubPath(goto.path, candidate.folder)) ?? this.windows.at(-1);
+    } else if (args.newWindow && !initial) {
+      window = await this.openWindow(os.homedir());
+    } else {
+      window = this.windows.at(-1);
+    }
+    if (!window) {
+      return;
+    }
+    if (!initial) {
+      window.focus();
+    }
+    if (args.session || args.prompt) {
+      window.openConversation({ sessionId: args.session, prompt: args.prompt });
+    }
+    if (goto) {
+      window.showFile(goto);
+    }
+    if (args.uri) {
+      window.openUri(args.uri);
+    }
   }
 
   private async closeWindow(window: WindowContext): Promise<void> {
@@ -518,6 +562,14 @@ function resolveWorkspaceFolder(folder: string | undefined, logger: ILogger): st
 function isDirectory(folder: string): boolean {
   try {
     return fs.statSync(folder).isDirectory();
+  } catch {
+    return false;
+  }
+}
+
+function isFile(file: string): boolean {
+  try {
+    return fs.statSync(file).isFile();
   } catch {
     return false;
   }

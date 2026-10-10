@@ -1,7 +1,7 @@
 import { describe, test } from 'node:test';
 import assert from 'node:assert/strict';
 import * as path from 'node:path';
-import { parseCliArgs, userArguments } from '../../../src/host/main/cli';
+import { parseCliArgs, parseGoto, userArguments } from '../../../src/host/main/cli';
 import {
   CASCADE_OFFSET,
   cascade,
@@ -36,11 +36,36 @@ describe('userArguments', () => {
 });
 
 describe('parseCliArgs', () => {
-  test('a folder comes from --folder or the first positional, resolved to an absolute path', () => {
+  test('a folder comes from --folder or the first positional, resolved against the start folder', () => {
     assert.equal(parseCliArgs(['--folder', 'a']).folder, path.resolve('a'));
     assert.equal(parseCliArgs(['b', '--devtools']).folder, path.resolve('b'));
+    assert.equal(parseCliArgs(['b'], 'C:\\start').folder, 'C:\\start\\b');
     assert.equal(parseCliArgs(['--devtools']).folder, undefined);
     assert.equal(parseCliArgs(['--devtools']).devtools, true);
+  });
+
+  test('a vilaus:// link is a link, not a folder', () => {
+    const args = parseCliArgs(['vilaus://anthropic.claude-code/open?session=x']);
+    assert.equal(args.uri, 'vilaus://anthropic.claude-code/open?session=x');
+    assert.equal(args.folder, undefined);
+  });
+
+  test('conversation, window and help options', () => {
+    const args = parseCliArgs(['--session', 's1', '--prompt', 'hi there', '--new-window', '-v']);
+    assert.equal(args.session, 's1');
+    assert.equal(args.prompt, 'hi there');
+    assert.equal(args.newWindow, true);
+    assert.equal(args.version, true);
+    assert.equal(args.help, false);
+    assert.equal(parseCliArgs(['-h']).help, true);
+  });
+
+  test('--goto takes a line and a column after the path, past a drive letter', () => {
+    assert.deepEqual(parseCliArgs(['--goto', 'C:\\w\\a.ts:12:5']).goto, { path: 'C:\\w\\a.ts', line: 12, column: 5 });
+    assert.deepEqual(parseGoto('C:\\w\\a.ts:3', 'C:\\x'), { path: 'C:\\w\\a.ts', line: 3, column: undefined });
+    assert.deepEqual(parseGoto('a.ts', 'C:\\x'), { path: 'C:\\x\\a.ts', line: undefined, column: undefined });
+    assert.deepEqual(parseGoto('a.ts:0', 'C:\\x'), { path: 'C:\\x\\a.ts', line: undefined, column: undefined });
+    assert.equal(parseGoto(undefined, 'C:\\x'), undefined);
   });
 });
 

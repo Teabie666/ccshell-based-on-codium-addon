@@ -104,6 +104,18 @@ export async function startWorkbench(modules: readonly ShellModule[]): Promise<v
     });
     rpc.handle('ui.showQuickPick', (request) => dialogs.showQuickPick(request));
     rpc.handle('ui.showInputBox', (request) => dialogs.showInputBox(request));
+    // As VS Code asks before an extension opens a link from outside (a web page can make one).
+    rpc.handle(
+      'ui.confirmOpenUri',
+      async ({ uri, extensionName }) =>
+        (await dialogs.showMessage({
+          severity: 'info',
+          modal: true,
+          message: t('confirmOpenUri', extensionName),
+          detail: uri,
+          items: [t('open')],
+        })) === 0,
+    );
   });
   connection.onDidDisconnect(() => frames.disposeAll());
   native.on('extensionHostState', ({ state }) => {
