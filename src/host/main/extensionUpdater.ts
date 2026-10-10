@@ -38,13 +38,15 @@ export interface ExtensionUpdaterOptions {
   readonly logger: ILogger;
 }
 
+const BUSY: ExtensionInstallResult = { outcome: 'failed', code: 'busy', message: 'another install is running' };
 /** Progress is reported at most this often. */
 const PROGRESS_INTERVAL_MS = 200;
 
 export class ExtensionUpdater extends Disposable {
   private activity: ExtensionActivity = { kind: 'idle' };
   private lastCheck: ExtensionStatus['lastCheck'];
-  private running: Promise<ExtensionInstallResult> | undefined;
+  /** The check or install in progress; one at a time. */
+  private running: { readonly kind: 'check' | 'file'; readonly done: Promise<ExtensionInstallResult> } | undefined;
   private readonly abort = new AbortController();
   private readonly changeEmitter = this.register(new Emitter<void>());
   readonly onDidChange: Event<void> = this.changeEmitter.event;
@@ -72,23 +74,25 @@ export class ExtensionUpdater extends Disposable {
   /**
    * Asks Open VSX and installs what it offers if it is newer (or, pinned, if it differs).
    * `manual`: asked for by the user, so a version rolled back from is installed anyway.
-   * One at a time: a check while another runs gets that one's result.
+   * One at a time: a check while another runs gets that one's result; while a .vsix installs, `busy`.
    */
   check(manual: boolean): Promise<ExtensionInstallResult> {
-    this.running ??= this.exclusive(async () => {
+    if (this.running) {
+      return this.running.kind === 'check' ? this.running.done : Promise.resolve(BUSY);
+    }
+    return this.exclusive('check', async () => {
       const result = await this.checkNow(manual);
       this.lastCheck = { ...result, at: Date.now(), manual };
       return result;
     });
-    return this.running;
   }
 
   /** Installs a .vsix the user picked. */
   installFile(file: string): Promise<ExtensionInstallResult> {
     if (this.running) {
-      return Promise.resolve({ outcome: 'failed', code: 'busy', message: 'another install is running' });
+      return Promise.resolve(BUSY);
     }
-    this.running = this.exclusive(async () => {
+    return this.exclusive('file', async () => {
       this.setActivity({ kind: 'installing', label: path.basename(file) });
       try {
         return { outcome: 'installed', version: await this.options.store.install(file) };
@@ -96,22 +100,29 @@ export class ExtensionUpdater extends Disposable {
         return this.failure(error);
       }
     });
-    return this.running;
   }
 
+  /** Not while an install runs: it would make its own version pending afterwards. */
   async rollBack(): Promise<string | undefined> {
+    if (this.running) {
+      return undefined;
+    }
     const version = await this.options.store.rollBack();
     this.changeEmitter.fire();
     return version;
   }
 
-  private async exclusive(work: () => Promise<ExtensionInstallResult>): Promise<ExtensionInstallResult> {
-    try {
-      return await work();
-    } finally {
-      this.running = undefined;
-      this.setActivity({ kind: 'idle' });
-    }
+  private exclusive(kind: 'check' | 'file', work: () => Promise<ExtensionInstallResult>): Promise<ExtensionInstallResult> {
+    const done = (async () => {
+      try {
+        return await work();
+      } finally {
+        this.running = undefined;
+        this.setActivity({ kind: 'idle' });
+      }
+    })();
+    this.running = { kind, done };
+    return done;
   }
 
   private async checkNow(manual: boolean): Promise<ExtensionInstallResult> {

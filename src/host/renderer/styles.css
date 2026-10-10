@@ -633,6 +633,43 @@ body.resizing {
   color: var(--vscode-settings-headerForeground);
 }
 
+/* A block at the top of a settings section (SettingsWidget). */
+.settings-widget {
+  margin: 4px 12px 8px 16px;
+  padding: 8px 10px;
+  border: 1px solid var(--vscode-widget-border, var(--vscode-panel-border));
+}
+
+.extension-version {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.extension-version-current {
+  font-weight: 600;
+}
+
+.extension-version-source {
+  color: var(--vscode-descriptionForeground);
+  word-break: break-all;
+}
+
+.extension-version-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.extension-version-row[hidden] {
+  display: none;
+}
+
+.extension-version-status {
+  color: var(--vscode-descriptionForeground);
+}
+
 .setting-item {
   padding: 8px 12px 10px 14px;
   border-left: 2px solid transparent;

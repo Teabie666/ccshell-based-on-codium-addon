@@ -38,8 +38,23 @@ export interface SettingDefinition {
   readonly hidden?: boolean;
 }
 
+/**
+ * A block the settings editor shows at the top of a section, above its settings: state and
+ * actions that are not settings themselves (the extension's version and its updates, say).
+ */
+export interface SettingsWidget {
+  readonly id: string;
+  /** The section it heads; the section is listed even with no settings of its own. */
+  readonly section: string;
+  /** What the search finds it by, besides the section's name. */
+  readonly keywords: string;
+  /** Builds the block in `container`. Called each time the editor renders; disposed before the next. */
+  create(container: HTMLElement): IDisposable;
+}
+
 export class SettingsService {
   private valueMap: Readonly<Record<string, unknown>> = {};
+  private readonly widgetList: SettingsWidget[] = [];
   private filePathValue = '';
   private readonly definitionList: SettingDefinition[] = [];
   private readonly changeEmitter = new Emitter<readonly string[]>();
@@ -97,6 +112,25 @@ export class SettingsService {
 
   definition(key: string): SettingDefinition | undefined {
     return this.definitionList.find((definition) => definition.key === key);
+  }
+
+  get widgets(): readonly SettingsWidget[] {
+    return this.widgetList;
+  }
+
+  /** Adds a block at the top of a section of the settings editor. */
+  registerWidget(widget: SettingsWidget): IDisposable {
+    this.widgetList.push(widget);
+    this.definitionsEmitter.fire();
+    return {
+      dispose: () => {
+        const index = this.widgetList.indexOf(widget);
+        if (index >= 0) {
+          this.widgetList.splice(index, 1);
+          this.definitionsEmitter.fire();
+        }
+      },
+    };
   }
 
   /** Declares settings; a key declared again replaces the earlier declaration. */

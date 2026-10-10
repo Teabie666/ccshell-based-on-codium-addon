@@ -101,6 +101,17 @@ Monaco、Shiki 和 Markdown 渲染都在第一次用到时才加载（renderer �
 - **编辑页**是内容面板的标签页（"管理 API 接口"）：左边列表和"添加 API 接口…"（从预设选），右边表单，显式保存。"为此接口创建桌面快捷方式"写一个 `.lnk`：`Vilausity.exe --provider <id>`（开发时是 electron.exe 加 app 目录）。
 - **测试**：界面测试在 127.0.0.1 起一个假的 Anthropic 接口，切到指向它的接口、重新加载窗口、新对话发一句话，检查假接口收到的 `Authorization: Bearer <key>` 和模型名；不花钱也不联网。
 
+## 插件管理（M4）
+
+- **找插件的顺序**（`host/main/extensionLocator.ts`）：`--extension-dir` → Vilausity 自己装的那份 → 本机 VSCodium / VS Code 装的。`LocatedExtension.kind` 记着来源（`cli` / `managed` / `external`）。
+- **自己装的那份**（`host/main/extensionStore.ts`）：`extensions\anthropic.claude-code-<版本>\` 是安装包里的 `extension/` 目录；`extensions\state.json` 记 `current`（正在用的）、`previous`（上一个，用于回滚）、`pending`（已装好、下次启动换上）、`lastGood`（最后一个激活成功的）、`skipped`（回滚时退掉的，自动更新跳过它，直到出了更新的版本）。状态的变化都是 `platform/extensionUpdates.ts` 里的纯函数。**只在启动时切换**（`prepare()`，在任何插件进程加载之前）：`pending` 变成 `current`、原来的 `current` 变成 `previous`，然后删掉这三个以外的版本和崩溃留下的半成品。正在运行的版本从不在运行中替换（插件进程开着它的文件，claude.exe 也在跑）。
+- **安装**：先解压到 `extensions\.staging-*`，检查完再改名成版本目录，所以半解压的包不会被当成装好了。解压用系统自带的 `C:\Windows\System32\tar.exe`（bsdtar，能解 zip；它默认拒绝 `..` 和绝对路径），不加依赖。检查：`package.json` 的发布者 `anthropic`、名字 `claude-code`、版本号、`main` 文件存在；`extension.vsixmanifest` 的 `TargetPlatform` 是本机平台（`win32-x64`）。
+- **更新**（`host/main/extensionUpdater.ts`，不依赖 Electron，网络请求从外面传进来：程序里是 `net.fetch`，走系统代理；单元测试里是 Node 的 fetch）：`GET <Open VSX>/api/anthropic/claude-code/win32-x64[/<版本>]` → 比较版本（`shouldInstall`）→ 下载 `.vsix`（跟随 302）到 `extensions\.downloads\`，边下边算 sha256，跟 Open VSX 公布的 `.sha256` 对 → 交给 store 安装、设成 `pending`。一次只跑一个；进度、结果作为 `ExtensionStatus` 推给所有窗口（`extensionStatus` 事件）。手动导入的 `.vsix` 没有校验值可比，只做上面的包检查。签名（`.sigzip`）没验。
+- **设置**：`vilaus.extension.autoUpdate`（默认开）、`vilaus.extension.version`（锁定版本：填了就装这个版本，可以往回装；空 = 跟最新）、`vilaus.extension.openVsxUrl`（Open VSX 或镜像）。自动检查在启动 15 秒后、之后每 12 小时、以及这三个设置改了时；`--extension-dir` 时不检查。自动装好后给最近用过的窗口发 `extensionUpdated`，弹"下次启动时使用"+「立即重启」。
+- **回滚**：设置界面的「退回 X」或命令面板：`pending = previous`、`skipped = current`，重启后生效。插件激活成功时记 `lastGood`；激活失败、而且这个版本是更新装上的、从没成功过、有上一个版本时，错误框里多一个"回到 X 并重启"。
+- **界面**（`features/extensionUpdates`）：设置编辑器"插件版本"一节，三个设置项上面是一个自定义块（`SettingsWidget`，`core/settings.ts` 的 `registerWidget`，设置编辑器把它画在所属分节的最前面，搜索按它的关键词过滤）：正在用的版本和来源、待切换的版本和「立即重启」、上一个版本和「退回」、「检查更新」「从 VSIX 安装...」和状态行（进度、结果、按错误码本地化的失败原因）。命令面板里也有这三个动作。
+- **测试**：单元测试用 bsdtar 现做小 `.vsix`、本机起假的 Open VSX（含 302、校验值不符、按版本查询），把下载 → 校验 → 安装 → 下次启动切换 → 回滚 → 清理整个跑一遍；界面测试的最后一步在设置里点"检查更新"、导入一个别人发布的 VSIX。界面测试和 smoke 的设置里关了自动更新（不然每个测试实例都会去 Open VSX 下 120 MB）。
+
 ## 评论（M3）
 
 在内容面板里选中文字写评论，评论显示在对话输入框正上方，随下一条消息发给 Claude（照插件计划评论的做法）。
@@ -146,6 +157,8 @@ Monaco、Shiki 和 Markdown 渲染都在第一次用到时才加载（renderer �
 | `state\shell.json` | 窗口位置、最近打开的文件夹、要恢复的窗口、缩放级别 | main |
 | `globalStorage\`、`workspaceStorage\` | 插件自己的存储目录 | 插件 |
 | `logs\<启动时间>\` | 本次启动的日志，保留最近 10 次：`main.log`，每个窗口一个 `window<N>\`（exthost.log、shim-unimplemented.log、output\） | main / extension host |
+| `providers.json` | API 接口（密钥用 safeStorage 加密） | main |
+| `extensions\` | 自己装的 Claude Code 插件（每个版本一个目录）和 `state.json`（当前、上一个、待切换的版本） | main |
 | `chromium\` | Chromium 自己的缓存等 | Electron |
 
 Claude 的会话记录和登录凭据在 `~\.claude\`，由 Claude CLI 管理，跟 VSCodium 里的插件共用。

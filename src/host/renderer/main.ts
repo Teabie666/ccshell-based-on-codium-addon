@@ -17,6 +17,7 @@ import { providersModule } from '../../features/providers';
 import { quickOpenModule } from '../../features/quickOpen';
 import { extensionHostStatusModule } from '../../features/extensionHostStatus';
 import { extensionMenusModule } from '../../features/extensionMenus';
+import { extensionUpdatesModule } from '../../features/extensionUpdates';
 import { languageModule } from '../../features/language';
 import { sessionsModule } from '../../features/sessions';
 import { settingsModule } from '../../features/settings';
@@ -41,6 +42,7 @@ const modules: ShellModule[] = [
   extensionHostStatusModule,
   workspaceModule,
   providersModule,
+  extensionUpdatesModule,
 ];
 
 startWorkbench(modules).catch((error: unknown) => {

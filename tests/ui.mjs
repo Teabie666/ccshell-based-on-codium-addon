@@ -3,7 +3,8 @@
 // Sends no messages to Claude (no usage).   npm run build && node tests/ui.mjs
 import { _electron as electron } from 'playwright-core';
 import electronPath from 'electron';
-import { spawn } from 'node:child_process';
+import { execFileSync, spawn } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import { createServer } from 'node:http';
 import { mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
@@ -1224,6 +1225,92 @@ await step('started without a folder, the windows open at quit come back', async
     return shown.length === 2 && both ? shown : undefined;
   }, 30_000, 'the two windows');
   return titles.join(', ');
+});
+
+/** A .vsix like Open VSX's (`extension/` and `extension.vsixmanifest` in a zip); resolves to its path. */
+function makeVsix(version, publisher = 'Anthropic') {
+  const dir = path.join(runDir, `vsix-${publisher}-${version}`);
+  mkdirSync(path.join(dir, 'extension'), { recursive: true });
+  writeFileSync(path.join(dir, 'extension', 'package.json'), JSON.stringify({ publisher, name: 'claude-code', version, main: './extension.js' }));
+  writeFileSync(path.join(dir, 'extension', 'extension.js'), 'exports.activate = () => {};\n');
+  writeFileSync(
+    path.join(dir, 'extension.vsixmanifest'),
+    `<PackageManifest><Metadata><Identity Id="claude-code" Version="${version}" Publisher="${publisher}" TargetPlatform="win32-x64"/></Metadata></PackageManifest>`,
+  );
+  // bsdtar (Windows' tar.exe) picks the format from the suffix.
+  const tar = path.join(process.env.SystemRoot ?? 'C:\\Windows', 'System32', 'tar.exe');
+  execFileSync(tar, ['-a', '-c', '-f', 'package.zip', 'extension', 'extension.vsixmanifest'], { cwd: dir });
+  return path.join(dir, 'package.zip');
+}
+
+// Last on purpose: the version installed here becomes current at the next start of this data folder.
+await step('Extension Version in settings: Check for Updates installs from Open VSX; a VSIX of someone else is refused', async () => {
+  const vsix = readFileSync(makeVsix('9.0.0'));
+  const sha256 = createHash('sha256').update(vsix).digest('hex');
+  let base = '';
+  const openVsx = createServer((request, response) => {
+    if (request.url === '/api/anthropic/claude-code/win32-x64') {
+      response.writeHead(200, { 'content-type': 'application/json' }).end(
+        JSON.stringify({
+          namespace: 'Anthropic',
+          name: 'claude-code',
+          version: '9.0.0',
+          targetPlatform: 'win32-x64',
+          files: { download: `${base}/package.vsix`, sha256: `${base}/package.sha256` },
+        }),
+      );
+    } else if (request.url === '/package.vsix') {
+      response.writeHead(200, { 'content-length': vsix.length }).end(vsix);
+    } else if (request.url === '/package.sha256') {
+      response.end(sha256);
+    } else {
+      response.writeHead(404).end();
+    }
+  });
+  await new Promise((resolve) => openVsx.listen(0, '127.0.0.1', resolve));
+  base = `http://127.0.0.1:${openVsx.address().port}`;
+  try {
+    const main = await waitFor(async () => {
+      for (const candidate of shellPages()) {
+        if (showsFolder(await candidate.title(), workspace)) return candidate;
+      }
+      return undefined;
+    }, 10_000, 'the workspace window');
+    await main.evaluate((url) => window.vilausNative.invoke('settings.update', { key: 'vilaus.extension.openVsxUrl', value: url }), base);
+    await press('Control+,');
+    await main.locator('#content-pane .settings-editor').waitFor({ timeout: 10_000 });
+    await main.locator('#content-pane .settings-search').fill('extension version');
+    const widget = main.locator('#content-pane .settings-widget[data-widget="extensionUpdates.version"]');
+    await widget.waitFor({ timeout: 5000 });
+    const current = await widget.locator('.extension-version-current').innerText();
+    if (!/^Claude Code \d/.test(current)) throw new Error(`the version in use reads "${current}"`);
+    const status = widget.locator('.extension-version-status');
+
+    // The display language is Chinese by now (an earlier step switched it): find by class.
+    await widget.locator('.extension-version-check').click();
+    await waitFor(
+      async () => (await widget.locator('.extension-version-pending').isVisible()) && (await status.innerText()).includes('9.0.0'),
+      30_000,
+      'the update to be downloaded and installed',
+    );
+    const state = JSON.parse(readFileSync(path.join(dataDir, 'extensions', 'state.json'), 'utf8'));
+    if (state.pending !== '9.0.0') throw new Error(`state.json: ${JSON.stringify(state)}`);
+
+    // The file picker answers with a package from another publisher.
+    const other = makeVsix('9.0.1', 'someone');
+    await app.evaluate(({ dialog }, file) => {
+      dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [file] });
+    }, other);
+    await widget.locator('.extension-version-install').click();
+    const refused = /not the Claude Code extension|不是 Claude Code 插件/;
+    await waitFor(async () => refused.test(await status.innerText()), 15_000, 'the refusal');
+    const after = JSON.parse(readFileSync(path.join(dataDir, 'extensions', 'state.json'), 'utf8'));
+    if (after.pending !== '9.0.0') throw new Error(`state.json after the refusal: ${JSON.stringify(after)}`);
+    await main.screenshot({ path: path.join(runDir, 'extension-version.png') });
+    return `${current}; pending ${state.pending}`;
+  } finally {
+    openVsx.close();
+  }
 });
 
 await app.close();

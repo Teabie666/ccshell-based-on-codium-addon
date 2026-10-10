@@ -239,6 +239,8 @@ export class SettingsEditorPane implements EditorPane {
   private readonly list: HTMLElement;
   private readonly rows = new Map<string, SettingRow>();
   private readonly disposables = new DisposableStore();
+  /** The widgets of the last render. */
+  private readonly widgets = new DisposableStore();
   private renderScheduled = false;
 
   constructor(
@@ -304,6 +306,7 @@ export class SettingsEditorPane implements EditorPane {
 
   dispose(): void {
     this.disposables.dispose();
+    this.widgets.dispose();
     this.root.remove();
   }
 
@@ -323,16 +326,36 @@ export class SettingsEditorPane implements EditorPane {
     const doc = this.root.ownerDocument;
     const scroll = this.list.scrollTop;
     this.rows.clear();
+    this.widgets.clear();
     this.toc.replaceChildren();
     this.list.replaceChildren();
     const visible = this.context.settings.definitions.filter((definition) => !definition.hidden);
-    for (const { section, settings } of groupBySection(visible)) {
+    const groups = groupBySection(visible);
+    const widgets = this.context.settings.widgets;
+    for (const widget of widgets) {
+      if (!groups.some((group) => group.section === widget.section)) {
+        groups.push({ section: widget.section, settings: [] });
+      }
+    }
+    for (const { section, settings } of groups) {
       const group = doc.createElement('section');
       group.className = 'settings-section';
       const heading = doc.createElement('h2');
       heading.className = 'settings-section-title';
       heading.textContent = section;
       group.appendChild(heading);
+      for (const widget of widgets.filter((candidate) => candidate.section === section)) {
+        const container = doc.createElement('div');
+        container.className = 'settings-widget';
+        container.dataset.widget = widget.id;
+        container.dataset.keywords = `${widget.keywords} ${section}`.toLowerCase();
+        group.appendChild(container);
+        try {
+          this.widgets.add(widget.create(container));
+        } catch (error) {
+          this.context.logger.error(`settings widget ${widget.id} failed`, error);
+        }
+      }
       for (const definition of settings) {
         const row = new SettingRow(doc, definition, this.context);
         this.rows.set(definition.key, row);
@@ -357,6 +380,12 @@ export class SettingsEditorPane implements EditorPane {
     const entries = [...this.toc.children] as HTMLElement[];
     sections.forEach((section, index) => {
       let any = false;
+      const words = query.toLowerCase().split(/\s+/).filter(Boolean);
+      for (const element of section.querySelectorAll<HTMLElement>('.settings-widget')) {
+        const keywords = element.dataset.keywords ?? '';
+        element.hidden = !words.every((word) => keywords.includes(word));
+        any ||= !element.hidden;
+      }
       for (const element of section.querySelectorAll<HTMLElement>('.setting-item')) {
         const row = this.rows.get(element.dataset.key ?? '');
         const match = row ? matchesQuery(row.definition, query) : false;

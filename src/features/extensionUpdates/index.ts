@@ -1,0 +1,294 @@
+/**
+ * The Claude Code extension's version (M4): the settings for its updates, and a block at the
+ * top of their section in the settings editor with the version in use and where it came
+ * from, Check for Updates, Install from VSIX..., going back to the version before, and a
+ * restart when a new one is ready. Main does the work (host/main/extensionUpdater.ts); an
+ * automatic update says so once it is downloaded.
+ */
+
+import { CommandCategory } from '../../core/messages';
+import type { ShellModule } from '../../core/module';
+import { ICommands, IDialogs, INative, ISettings } from '../../core/serviceIds';
+import { Emitter } from '../../platform/event';
+import {
+  AUTO_UPDATE_SETTING,
+  DEFAULT_OPEN_VSX_URL,
+  OPEN_VSX_URL_SETTING,
+  PINNED_VERSION_SETTING,
+  type ExtensionErrorCode,
+} from '../../platform/extensionUpdates';
+import type { ExtensionInstallResult, ExtensionStatus } from '../../platform/protocol';
+import { t } from './messages';
+
+const ERROR_TEXT: Record<ExtensionErrorCode, () => string> = {
+  network: () => t('errorNetwork'),
+  notFound: () => t('errorNotFound'),
+  checksum: () => t('errorChecksum'),
+  notClaudeCode: () => t('errorNotClaudeCode'),
+  wrongPlatform: () => t('errorWrongPlatform'),
+  badPackage: () => t('errorBadPackage'),
+  extract: () => t('errorExtract'),
+  busy: () => t('errorBusy'),
+};
+
+/** What a check or an install ended with, for the status line; undefined says nothing. */
+export function resultText(result: ExtensionInstallResult): string | undefined {
+  switch (result.outcome) {
+    case 'upToDate':
+      return t('upToDate', result.version);
+    case 'installed':
+      return t('installed', result.version);
+    case 'failed':
+      return t('failed', ERROR_TEXT[result.code]());
+    default:
+      return undefined;
+  }
+}
+
+/** `12.3 / 120.5 MB (10%)`, or just the megabytes when the size is unknown. */
+export function progressText(received: number, total?: number): string {
+  const mb = (bytes: number): string => (bytes / 1024 / 1024).toFixed(1);
+  return total ? `${mb(received)} / ${mb(total)} MB (${Math.floor((received / total) * 100)}%)` : `${mb(received)} MB`;
+}
+
+export const extensionUpdatesModule: ShellModule = {
+  id: 'extensionUpdates',
+  dependsOn: ['settings'],
+  async activate({ services, subscriptions, logger }) {
+    const native = services.get(INative);
+    const settings = services.get(ISettings);
+    const dialogs = services.get(IDialogs);
+    const commands = services.get(ICommands);
+
+    let status: ExtensionStatus = await native.call('extension.status', undefined);
+    /** The last outcome of an action taken here (a check's also arrives in the status). */
+    let note: string | undefined;
+    const changed = subscriptions.add(new Emitter<void>());
+    subscriptions.add(
+      native.on('extensionStatus', (next) => {
+        if (next.lastCheck?.at !== status.lastCheck?.at) {
+          // A newer check (an automatic one, say) says more than an older action.
+          note = undefined;
+        }
+        status = next;
+        changed.fire();
+      }),
+    );
+    const setNote = (text: string | undefined): void => {
+      note = text;
+      changed.fire();
+    };
+
+    const section = t('section');
+    subscriptions.add(
+      settings.register([
+        {
+          key: AUTO_UPDATE_SETTING,
+          section,
+          order: 1,
+          schema: { type: 'boolean', default: true, description: t('autoUpdateSetting') },
+        },
+        {
+          key: PINNED_VERSION_SETTING,
+          section,
+          order: 2,
+          schema: { type: 'string', default: '', pattern: '^(\\d+(\\.\\d+)*(-[0-9A-Za-z.]+)?)?$', description: t('versionSetting') },
+        },
+        {
+          key: OPEN_VSX_URL_SETTING,
+          section,
+          order: 3,
+          schema: { type: 'string', default: DEFAULT_OPEN_VSX_URL, format: 'uri', description: t('openVsxSetting') },
+        },
+      ]),
+    );
+
+    const relaunch = (): void => void native.call('app.relaunch', undefined);
+    const check = async (): Promise<ExtensionInstallResult> => {
+      setNote(undefined);
+      const result = await native.call('extension.check', undefined);
+      setNote(resultText(result));
+      return result;
+    };
+    const installFile = async (): Promise<ExtensionInstallResult> => {
+      setNote(undefined);
+      const result = await native.call('extension.installFile', undefined);
+      setNote(resultText(result));
+      return result;
+    };
+    const rollBack = async (): Promise<string | undefined> => {
+      const version = await native.call('extension.rollBack', undefined);
+      setNote(version ? t('rolledBack', version) : t('nothingToRollBack'));
+      return version;
+    };
+    const logged = <T>(action: () => Promise<T>) => (): void => {
+      action().catch((error: unknown) => logger.error('extension action failed', error));
+    };
+
+    subscriptions.add(
+      settings.registerWidget({
+        id: 'extensionUpdates.version',
+        section,
+        keywords: t('keywords'),
+        create: (container) => {
+          const view = new VersionView(container, { relaunch, check: logged(check), installFile: logged(installFile), rollBack: logged(rollBack) });
+          const render = (): void => view.render(status, note);
+          render();
+          return changed.event(render);
+        },
+      }),
+    );
+
+    // From the command palette the outcome comes as a notification.
+    const notify = (text: string | undefined, failed: boolean): void => {
+      if (text) {
+        void dialogs.showMessage({ severity: failed ? 'error' : 'info', message: text, modal: false, items: [] });
+      }
+    };
+    const category = CommandCategory.preferences;
+    subscriptions.add(
+      commands.register(
+        'extension.checkForUpdates',
+        async () => {
+          const result = await check();
+          notify(resultText(result), result.outcome === 'failed');
+        },
+        { title: t('checkCommand'), category },
+      ),
+    );
+    subscriptions.add(
+      commands.register(
+        'extension.installFromVsix',
+        async () => {
+          const result = await installFile();
+          notify(resultText(result), result.outcome === 'failed');
+        },
+        { title: t('installFileCommand'), category },
+      ),
+    );
+    subscriptions.add(
+      commands.register(
+        'extension.rollBack',
+        async () => {
+          const version = await rollBack();
+          notify(version ? t('rolledBack', version) : t('nothingToRollBack'), version === undefined);
+        },
+        { title: t('rollBackCommand'), category },
+      ),
+    );
+
+    // An automatic update is ready: say so once, in the window that was used last.
+    subscriptions.add(
+      native.on('extensionUpdated', ({ version }) => {
+        void dialogs
+          .showMessage({ severity: 'info', message: t('updated', version), modal: false, items: [t('restartNow')] })
+          .then((picked) => {
+            if (picked === 0) {
+              relaunch();
+            }
+          });
+      }),
+    );
+  },
+};
+
+interface VersionActions {
+  relaunch(): void;
+  check(): void;
+  installFile(): void;
+  rollBack(): void;
+}
+
+/** The block in the settings editor. */
+class VersionView {
+  private readonly current: HTMLElement;
+  private readonly source: HTMLElement;
+  private readonly pendingRow: HTMLElement;
+  private readonly pendingText: HTMLElement;
+  private readonly previousRow: HTMLElement;
+  private readonly previousText: HTMLElement;
+  private readonly rollBackButton: HTMLButtonElement;
+  private readonly checkButton: HTMLButtonElement;
+  private readonly installButton: HTMLButtonElement;
+  private readonly statusText: HTMLElement;
+
+  constructor(container: HTMLElement, actions: VersionActions) {
+    const doc = container.ownerDocument;
+    const element = <K extends keyof HTMLElementTagNameMap>(tag: K, className: string, text = ''): HTMLElementTagNameMap[K] => {
+      const node = doc.createElement(tag);
+      node.className = className;
+      node.textContent = text;
+      return node;
+    };
+    const button = (text: string, onClick: () => void, secondary = true): HTMLButtonElement => {
+      const node = element('button', secondary ? 'button secondary' : 'button', text);
+      node.addEventListener('click', onClick);
+      return node;
+    };
+    const row = (...children: HTMLElement[]): HTMLElement => {
+      const node = element('div', 'extension-version-row');
+      node.append(...children);
+      return node;
+    };
+
+    container.classList.add('extension-version');
+    this.current = element('div', 'extension-version-current');
+    this.source = element('div', 'extension-version-source');
+    this.pendingText = element('span', 'extension-version-text');
+    this.pendingRow = row(this.pendingText, button(t('restartNow'), actions.relaunch, false));
+    this.pendingRow.classList.add('extension-version-pending');
+    this.previousText = element('span', 'extension-version-text');
+    this.rollBackButton = button('', actions.rollBack);
+    this.previousRow = row(this.previousText, this.rollBackButton);
+    this.checkButton = button(t('check'), actions.check);
+    this.checkButton.classList.add('extension-version-check');
+    this.installButton = button(t('installFile'), actions.installFile);
+    this.installButton.classList.add('extension-version-install');
+    this.statusText = element('span', 'extension-version-status');
+    this.statusText.setAttribute('role', 'status');
+    container.append(
+      this.current,
+      this.source,
+      this.pendingRow,
+      this.previousRow,
+      row(this.checkButton, this.installButton, this.statusText),
+    );
+  }
+
+  render(status: ExtensionStatus, note: string | undefined): void {
+    const { running, managed, activity } = status;
+    this.current.textContent = running ? t('inUse', running.version) : t('notFound');
+    this.source.textContent = !running
+      ? ''
+      : running.kind === 'managed'
+        ? t('sourceManaged', running.path)
+        : running.kind === 'cli'
+          ? t('sourceCli', running.path)
+          : t('sourceExternal', running.path);
+    this.source.hidden = !running;
+
+    const pending = managed.pending;
+    this.pendingRow.hidden = pending === undefined;
+    this.pendingText.textContent = pending === undefined ? '' : t('pending', pending);
+
+    // Going back is to the version before the one in use, so only for a managed copy.
+    const previous = running?.kind === 'managed' && running.version === managed.current ? managed.previous : undefined;
+    const rolledBack = previous !== undefined && pending === previous;
+    this.previousRow.hidden = previous === undefined || rolledBack;
+    this.previousText.textContent = previous === undefined ? '' : t('previous', previous);
+    this.rollBackButton.textContent = previous === undefined ? '' : t('rollBack', previous);
+
+    const idle = activity.kind === 'idle';
+    for (const button of [this.checkButton, this.installButton, this.rollBackButton]) {
+      button.disabled = !idle || !status.updatesApply;
+    }
+    this.statusText.textContent =
+      activity.kind === 'checking'
+        ? t('checking')
+        : activity.kind === 'downloading'
+          ? t('downloading', activity.version, progressText(activity.received, activity.total))
+          : activity.kind === 'installing'
+            ? t('installing', activity.label)
+            : (note ?? (status.lastCheck ? (resultText(status.lastCheck) ?? '') : ''));
+  }
+}
