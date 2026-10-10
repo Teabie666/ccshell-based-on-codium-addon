@@ -17,7 +17,12 @@ mkdirSync(workspace, { recursive: true });
 // English, whatever the system language: the steps look for English labels. The last
 // step switches to Chinese.
 const settingsFile = path.join(dataDir, 'settings.json');
-writeFileSync(settingsFile, JSON.stringify({ 'claudeCode.hideOnboarding': true, 'vilaus.language': 'en' }), 'utf8');
+// No automatic extension updates: they would download from Open VSX during the run.
+writeFileSync(
+  settingsFile,
+  JSON.stringify({ 'claudeCode.hideOnboarding': true, 'vilaus.language': 'en', 'vilaus.extension.autoUpdate': false }),
+  'utf8',
+);
 
 const env = { ...process.env };
 for (const name of Object.keys(env)) {

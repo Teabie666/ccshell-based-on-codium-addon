@@ -9,7 +9,15 @@ import * as crypto from 'node:crypto';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
-import { app, dialog, ipcMain, safeStorage, session, shell } from 'electron';
+import { app, dialog, ipcMain, net, safeStorage, session, shell } from 'electron';
+import {
+  AUTO_UPDATE_SETTING,
+  DEFAULT_OPEN_VSX_URL,
+  isVersion,
+  OPEN_VSX_URL_SETTING,
+  PINNED_VERSION_SETTING,
+  targetPlatformOf,
+} from '../../platform/extensionUpdates';
 import type { ParamsOf, ResultOf } from '../../platform/ipc';
 import { Disposable, toDisposable } from '../../platform/lifecycle';
 import type { ILogger, LogLevel } from '../../platform/log';
@@ -44,6 +52,8 @@ import type { AppPaths } from './appPaths';
 import { installCcwProtocol } from './ccwProtocol';
 import type { CliArgs } from './cli';
 import { locateClaudeExtension, type LocatedExtension } from './extensionLocator';
+import { ExtensionStore } from './extensionStore';
+import { ExtensionUpdater, type UpdateSettings } from './extensionUpdater';
 import { t } from './messages';
 import { ProviderStore, type SecretCipher } from './providerStore';
 import { SettingsStore } from './settingsStore';
@@ -74,6 +84,10 @@ const THEME_SETTING_KEYS = new Set([
   'editor.fontSize',
   'editor.fontWeight',
 ]);
+/** Automatic updates of the extension: this long after the start, then at this interval. */
+const FIRST_UPDATE_CHECK_MS = 15_000;
+const UPDATE_CHECK_INTERVAL_MS = 12 * 60 * 60_000;
+const UPDATE_SETTING_KEYS = [AUTO_UPDATE_SETTING, PINNED_VERSION_SETTING, OPEN_VSX_URL_SETTING];
 /** Where the one window's placement and zoom were kept before there were several windows. */
 const LEGACY_WINDOW_STATE_KEY = 'vilaus.window';
 
@@ -110,6 +124,9 @@ export class ShellApp extends Disposable implements WindowHost {
   readonly language: UiLanguage;
   readonly extensionTable: ExtensionTranslations | undefined;
   readonly providers: ProviderStore;
+  /** The extension copies vilaus installs (Open VSX, .vsix files). */
+  readonly extensionStore: ExtensionStore;
+  private updater: ExtensionUpdater | undefined;
   private readonly shellState: StateStore;
   private readonly history: WindowHistory;
   private readonly themesDir: string;
@@ -146,6 +163,11 @@ export class ShellApp extends Disposable implements WindowHost {
     this.providers = this.register(
       new ProviderStore(env.paths.providersFile, electronCipher, this.logger.child('providers')),
     );
+    this.extensionStore = new ExtensionStore(
+      env.paths.extensionsDir,
+      targetPlatformOf(process.platform, process.arch),
+      this.logger.child('extensions'),
+    );
     this.themesDir = path.join(env.appDir, 'themes');
     const themeId = env.args.theme ?? stringSetting(this.settings.all[THEME_SETTING]) ?? DEFAULT_THEME_ID;
     this.currentTheme = withFontVariables(loadTheme(this.themesDir, themeId, this.logger), this.settings.all);
@@ -170,7 +192,20 @@ export class ShellApp extends Disposable implements WindowHost {
   }
 
   async start(): Promise<void> {
-    this.located = locateClaudeExtension(this.env.args.extensionDir);
+    // A version installed last run becomes current now, before any extension host loads it.
+    this.located = locateClaudeExtension(this.env.args.extensionDir, this.extensionStore.prepare());
+    const updater = this.register(
+      new ExtensionUpdater({
+        store: this.extensionStore,
+        fetch: (url, init) => net.fetch(url, init),
+        targetPlatform: this.extensionStore.targetPlatform,
+        running: this.located,
+        settings: () => this.updateSettings(),
+        logger: this.logger.child('extensions'),
+      }),
+    );
+    this.updater = updater;
+    this.register(updater.onDidChange(() => this.broadcast('extensionStatus', updater.status())));
     if (!this.located) {
       dialog.showErrorBox('Vilausity', t('extensionNotFound'));
       app.quit();
@@ -221,6 +256,7 @@ export class ShellApp extends Disposable implements WindowHost {
       await this.openWindow(folder);
     }
     await this.applyCommandLine(args, true);
+    this.scheduleUpdateChecks();
   }
 
   /** A second start's arguments: its folder, file, conversation or link, in the right window. */
@@ -302,6 +338,27 @@ export class ShellApp extends Disposable implements WindowHost {
       if (window !== source) {
         window.globalStateChanged(key, value);
       }
+    }
+  }
+
+  extensionActivated(version: string): void {
+    if (this.located?.kind === 'managed' && this.located.version === version) {
+      this.extensionStore.markGood(version).catch((error: unknown) => this.logger.error('recording a working version failed', error));
+    }
+  }
+
+  /** The previous managed version, when the running one came from an update and has never activated. */
+  rollbackTarget(): string | undefined {
+    const { current, previous, lastGood } = this.extensionStore.state;
+    if (this.located?.kind !== 'managed' || this.located.version !== current || lastGood === current) {
+      return undefined;
+    }
+    return previous !== undefined && this.extensionStore.isInstalled(previous) ? previous : undefined;
+  }
+
+  async rollBackAndRelaunch(): Promise<void> {
+    if (await this.updater?.rollBack()) {
+      this.relaunch();
     }
   }
 
@@ -502,6 +559,9 @@ export class ShellApp extends Disposable implements WindowHost {
     for (const window of this.windows) {
       window.settingsChanged(keys);
     }
+    if (keys.some((key) => UPDATE_SETTING_KEYS.includes(key))) {
+      this.checkForUpdatesAutomatically();
+    }
     if (keys.some((key) => THEME_SETTING_KEYS.has(key))) {
       this.reloadTheme();
     }
@@ -514,6 +574,39 @@ export class ShellApp extends Disposable implements WindowHost {
         this.broadcast('languageChanged', { language: wanted });
       }
     }
+  }
+
+  private updateSettings(): UpdateSettings {
+    const pinned = this.settings.all[PINNED_VERSION_SETTING];
+    return {
+      openVsxUrl: stringSetting(this.settings.all[OPEN_VSX_URL_SETTING]) ?? DEFAULT_OPEN_VSX_URL,
+      pinned: isVersion(pinned) ? pinned : undefined,
+    };
+  }
+
+  /** Shortly after the start, then twice a day (and when the update settings change). */
+  private scheduleUpdateChecks(): void {
+    const first = setTimeout(() => this.checkForUpdatesAutomatically(), FIRST_UPDATE_CHECK_MS);
+    const every = setInterval(() => this.checkForUpdatesAutomatically(), UPDATE_CHECK_INTERVAL_MS);
+    this.register(
+      toDisposable(() => {
+        clearTimeout(first);
+        clearInterval(every);
+      }),
+    );
+  }
+
+  /** Installs what Open VSX offers, if automatic updates are on; the version is used from the next start. */
+  private checkForUpdatesAutomatically(): void {
+    const updater = this.updater;
+    if (!updater?.updatesApply || this.settings.all[AUTO_UPDATE_SETTING] === false || this.quitting) {
+      return;
+    }
+    void updater.check(false).then((result) => {
+      if (result.outcome === 'installed') {
+        this.windows.at(-1)?.emit('extensionUpdated', { version: result.version });
+      }
+    });
   }
 
   /** The table webviews translate the extension's UI with now: the setting can turn it off. */
@@ -593,6 +686,18 @@ export class ShellApp extends Disposable implements WindowHost {
       'providers.remove': ({ id }) => this.providers.remove(id),
       'providers.setKey': ({ id, key }) => this.providers.setKey(id, key),
       'providers.createShortcut': ({ id }) => this.createShortcut(id),
+      'extension.status': () => this.requireUpdater().status(),
+      'extension.check': () => this.requireUpdater().check(true),
+      'extension.installFile': async (_params, window) => {
+        const picked = await dialog.showOpenDialog(window.browserWindow, {
+          title: t('installVsixTitle'),
+          properties: ['openFile'],
+          filters: [{ name: t('vsixFiles'), extensions: ['vsix'] }],
+        });
+        const file = picked.canceled ? undefined : picked.filePaths[0];
+        return file ? this.requireUpdater().installFile(file) : { outcome: 'cancelled' };
+      },
+      'extension.rollBack': () => this.requireUpdater().rollBack(),
       'window.setKeybindings': ({ chords }, window) => window.window.setInterceptedChords(chords),
       'window.zoom': ({ delta }) => {
         // One level for all windows: Chromium zooms pages of the same origin together anyway.
@@ -620,6 +725,13 @@ export class ShellApp extends Disposable implements WindowHost {
       return handler(params, window);
     });
     this.register(toDisposable(() => ipcMain.removeHandler(IpcChannel.Rpc)));
+  }
+
+  private requireUpdater(): ExtensionUpdater {
+    if (!this.updater) {
+      throw new Error('the extension updater has not started');
+    }
+    return this.updater;
   }
 
   private machineId(): string {

@@ -12,6 +12,7 @@
  * Rule: only plain, structured-clone-safe data here (no class instances, no functions).
  */
 
+import type { ExtensionErrorCode, ManagedExtensions } from './extensionUpdates';
 import type { UiLanguage, UiLanguageSetting } from './nls';
 import type { ProviderConfig, ProviderSummary } from './providers';
 
@@ -368,6 +369,36 @@ export interface RendererInitData {
   readonly providers: ProvidersState;
 }
 
+/** What the extension updater is doing. */
+export type ExtensionActivity =
+  | { readonly kind: 'idle' }
+  | { readonly kind: 'checking' }
+  | { readonly kind: 'downloading'; readonly version: string; readonly received: number; readonly total?: number }
+  /** `label`: the version, or the name of the .vsix file. */
+  | { readonly kind: 'installing'; readonly label: string };
+
+/** How a check for updates, or installing a .vsix, ended. */
+export type ExtensionInstallResult =
+  /** `version`: the newest Open VSX offers (or the pinned one), already in use or pending. */
+  | { readonly outcome: 'upToDate'; readonly version: string }
+  /** `version` is pending: it is used from the next start. */
+  | { readonly outcome: 'installed'; readonly version: string }
+  | { readonly outcome: 'failed'; readonly code: ExtensionErrorCode; readonly message: string }
+  /** The user closed the file picker. */
+  | { readonly outcome: 'cancelled' };
+
+/** The Claude Code extension: the copy the windows run, the managed copies, updates. */
+export interface ExtensionStatus {
+  /** Undefined when none was found. */
+  readonly running?: { readonly version: string; readonly path: string; readonly kind: 'cli' | 'managed' | 'external' };
+  readonly managed: ManagedExtensions;
+  readonly activity: ExtensionActivity;
+  /** The last check for updates in this run, automatic or not. */
+  readonly lastCheck?: ExtensionInstallResult & { readonly at: number; readonly manual: boolean };
+  /** False with `--extension-dir`: that copy is used as it is, and nothing is updated. */
+  readonly updatesApply: boolean;
+}
+
 /** The API providers (without keys) and the one this window uses. */
 export interface ProvidersState {
   readonly providers: readonly ProviderSummary[];
@@ -586,6 +617,15 @@ export type MainApiForRenderer = {
   'providers.setKey': (p: { id: string; key?: string }) => void;
   /** A desktop shortcut that starts Vilausity with this provider; resolves to its path. */
   'providers.createShortcut': (p: { id: string }) => string;
+
+  // ---- The Claude Code extension (vilaus's managed copies) ----
+  'extension.status': (p: void) => ExtensionStatus;
+  /** Checks Open VSX now and installs a newer (or the pinned) version, even one rolled back from. */
+  'extension.check': (p: void) => ExtensionInstallResult;
+  /** Picks a .vsix with the system's file picker and installs it. */
+  'extension.installFile': (p: void) => ExtensionInstallResult;
+  /** Back to the previous version at the next start; resolves to it, or undefined if there is none. */
+  'extension.rollBack': (p: void) => string | undefined;
   /** The chords main should intercept and send back as `keybinding` events. */
   'window.setKeybindings': (p: { chords: readonly string[] }) => void;
   /** `delta` in zoom steps, or 0 to reset. Returns the new zoom level. */
@@ -613,6 +653,13 @@ export type MainEventsForRenderer = {
   extensionTranslationsChanged: { readonly translations: ExtensionTranslations | null };
   /** Providers were added, edited or removed, or the window uses another one. */
   providersChanged: ProvidersState;
+  /** The extension's status changed (a check, a download's progress, an install). */
+  extensionStatus: ExtensionStatus;
+  /**
+   * An automatic update installed `version`, used from the next start. Sent to the most
+   * recently focused window only.
+   */
+  extensionUpdated: { readonly version: string };
 };
 
 export interface MainEventMessage<K extends keyof MainEventsForRenderer = keyof MainEventsForRenderer> {

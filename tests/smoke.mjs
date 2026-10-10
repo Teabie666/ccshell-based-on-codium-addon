@@ -65,6 +65,8 @@ writeFileSync(
       'claudeCode.disableLoginPrompt': !subscription,
       // English labels: the steps look for the shell's English buttons.
       'vilaus.language': 'en',
+      // No download from Open VSX during the run.
+      'vilaus.extension.autoUpdate': false,
       'claudeCode.environmentVariables': apiEnvironment(),
     },
     null,

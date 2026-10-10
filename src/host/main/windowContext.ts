@@ -58,6 +58,11 @@ export interface WindowHost {
   globalStateChanged(source: WindowContext, key: string, value: unknown): void;
   /** The user closed the window (its close button, Alt+F4). */
   requestClose(window: WindowContext): void;
+  /** The extension activated in some window: that version works. */
+  extensionActivated(version: string): void;
+  /** The version to go back to when the running one fails to start, if there is one. */
+  rollbackTarget(): string | undefined;
+  rollBackAndRelaunch(): Promise<void>;
 }
 
 export interface WindowOptions {
@@ -201,6 +206,27 @@ export class WindowContext extends Disposable {
     // Each folder keeps its own provider.
     this.currentProvider = this.host.initialProvider(folder);
     this.webContents.reload();
+  }
+
+  /** Says so; a version installed by an update that has never worked offers going back. */
+  private async activationFailed(message: string): Promise<void> {
+    const target = this.host.rollbackTarget();
+    if (target === undefined) {
+      await dialog.showMessageBox(this.browserWindow, { type: 'error', message: t('extensionFailedToStart'), detail: message });
+      return;
+    }
+    const { response } = await dialog.showMessageBox(this.browserWindow, {
+      type: 'error',
+      message: t('extensionFailedToStart'),
+      detail: `${message}\n\n${t('rollBackOffer', this.host.extension.version, target)}`,
+      buttons: [t('rollBackAndRestart', target), t('close')],
+      defaultId: 0,
+      cancelId: 1,
+      noLink: true,
+    });
+    if (response === 0) {
+      await this.host.rollBackAndRelaunch();
+    }
   }
 
   emit<K extends keyof MainEventsForRenderer>(name: K, payload: MainEventsForRenderer[K]): void {
@@ -376,14 +402,11 @@ export class WindowContext extends Disposable {
     const host = this.host;
     rpc.handle('exthost.activated', ({ extensionVersion }) => {
       this.logger.info(`Claude Code ${extensionVersion} activated`);
+      host.extensionActivated(extensionVersion);
     });
     rpc.handle('exthost.activationFailed', ({ message, stack }) => {
       this.logger.error(`Claude Code failed to activate: ${message}\n${stack ?? ''}`);
-      void dialog.showMessageBox(this.browserWindow, {
-        type: 'error',
-        message: t('extensionFailedToStart'),
-        detail: message,
-      });
+      void this.activationFailed(message);
     });
     rpc.handle('webview.setDocument', (document) => host.documents.set(document, this.documentOwner));
     rpc.handle('webview.releaseDocument', ({ webviewId }) => host.documents.release(webviewId));

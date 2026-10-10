@@ -5,12 +5,14 @@
 import * as path from 'node:path';
 import { app, Menu } from 'electron';
 import { setUnexpectedErrorHandler } from '../../platform/event';
-import { Logger, LogLevel, parseLogLevel } from '../../platform/log';
+import { targetPlatformOf } from '../../platform/extensionUpdates';
+import { Logger, LogLevel, NullLogger, parseLogLevel } from '../../platform/log';
 import { FileLogSink } from '../node/fileLogSink';
-import { createAppPaths, pruneOldLogs } from './appPaths';
+import { createAppPaths, pruneOldLogs, type AppPaths } from './appPaths';
 import { registerCcwSchemePrivileges } from './ccwProtocol';
 import { HELP_TEXT, parseCliArgs, userArguments, type CliArgs } from './cli';
 import { locateClaudeExtension } from './extensionLocator';
+import { ExtensionStore } from './extensionStore';
 import { ShellApp } from './shellApp';
 
 /** What a second start hands to the running instance (Electron's `additionalData`). */
@@ -30,8 +32,9 @@ function isSecondStart(value: unknown): value is SecondStart {
   );
 }
 
-function versionText(args: CliArgs): string {
-  const extension = locateClaudeExtension(args.extensionDir);
+function versionText(args: CliArgs, paths: AppPaths): string {
+  const store = new ExtensionStore(paths.extensionsDir, targetPlatformOf(process.platform, process.arch), NullLogger);
+  const extension = locateClaudeExtension(args.extensionDir, store.currentCopy());
   return [
     `Vilausity ${app.getVersion()}`,
     `Electron ${process.versions.electron}, Chromium ${process.versions.chrome}, Node ${process.versions.node}`,
@@ -43,8 +46,10 @@ function versionText(args: CliArgs): string {
 function main(): void {
   const argv = userArguments(process.argv, app.isPackaged);
   const args = parseCliArgs(argv);
+  const dataRoot = args.userDataDir ?? path.join(app.getPath('appData'), 'Vilausity');
+  const paths = createAppPaths(dataRoot);
   if (args.help || args.version) {
-    process.stdout.write(args.help ? HELP_TEXT : versionText(args));
+    process.stdout.write(args.help ? HELP_TEXT : versionText(args, paths));
     app.exit(0);
     return;
   }
@@ -54,8 +59,6 @@ function main(): void {
   // No application menu: it would bring Electron's default accelerators (Ctrl+W, Ctrl+R...).
   Menu.setApplicationMenu(null);
 
-  const dataRoot = args.userDataDir ?? path.join(app.getPath('appData'), 'Vilausity');
-  const paths = createAppPaths(dataRoot);
   app.setPath('userData', dataRoot);
   app.setPath('sessionData', paths.chromium);
 

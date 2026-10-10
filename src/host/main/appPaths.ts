@@ -14,6 +14,8 @@ export interface AppPaths {
   readonly shellStateFile: string;
   /** The API providers; their keys are stored encrypted. */
   readonly providersFile: string;
+  /** The Claude Code extension as vilaus installs it (from Open VSX or a .vsix). */
+  readonly extensionsDir: string;
   /** Chromium's own profile data (cache, local storage), kept apart from ours. */
   readonly chromium: string;
   readonly logsRoot: string;
@@ -41,6 +43,7 @@ export function createAppPaths(root: string, startedAt = new Date()): AppPaths {
     globalStateFile: path.join(root, 'state', 'global.json'),
     shellStateFile: path.join(root, 'state', 'shell.json'),
     providersFile: path.join(root, 'providers.json'),
+    extensionsDir: path.join(root, 'extensions'),
     chromium: path.join(root, 'chromium'),
     logsRoot,
     sessionLogs,
