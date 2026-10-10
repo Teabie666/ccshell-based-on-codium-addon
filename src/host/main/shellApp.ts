@@ -200,6 +200,8 @@ export class ShellApp extends Disposable implements WindowHost {
         fetch: (url, init) => net.fetch(url, init),
         targetPlatform: this.extensionStore.targetPlatform,
         running: this.located,
+        // Another editor's copy, whichever runs: the version to go back to after the first update.
+        external: locateClaudeExtension(),
         settings: () => this.updateSettings(),
         logger: this.logger.child('extensions'),
       }),
@@ -347,17 +349,18 @@ export class ShellApp extends Disposable implements WindowHost {
     }
   }
 
-  /** The previous managed version, when the running one came from an update and has never activated. */
+  /** The version to go back to, when the running one came from an update and has never activated. */
   rollbackTarget(): string | undefined {
-    const { current, previous, lastGood } = this.extensionStore.state;
+    const { current, lastGood } = this.extensionStore.state;
     if (this.located?.kind !== 'managed' || this.located.version !== current || lastGood === current) {
       return undefined;
     }
-    return previous !== undefined && this.extensionStore.isInstalled(previous) ? previous : undefined;
+    return this.updater?.rollbackTarget()?.version;
   }
 
   async rollBackAndRelaunch(): Promise<void> {
-    if (await this.updater?.rollBack()) {
+    const result = await this.updater?.rollBack();
+    if (result?.outcome === 'installed') {
       this.relaunch();
     }
   }

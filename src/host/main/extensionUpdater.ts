@@ -2,7 +2,10 @@
  * Updates the Claude Code extension from Open VSX: asks for the latest (or the pinned)
  * version, downloads the .vsix, checks it against the sha256 Open VSX publishes, and hands
  * it to the ExtensionStore, which makes it current at the next start. Also installs a .vsix
- * the user picks. Reports what it does as ExtensionStatus for the settings editor.
+ * the user picks, and goes back to the version before. When the first update replaces
+ * another editor's copy (VSCodium's), that copy is backed up into the store first, so there
+ * is always a version to go back to. Reports what it does as ExtensionStatus for the
+ * settings editor.
  * No Electron: `fetch` is Electron's net.fetch in the app (it uses the system proxy).
  */
 
@@ -13,7 +16,13 @@ import { Readable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 import type { ReadableStream as WebReadableStream } from 'node:stream/web';
 import { Emitter, type Event } from '../../platform/event';
-import { parseOpenVsxRelease, releaseUrl, shouldInstall, type OpenVsxRelease } from '../../platform/extensionUpdates';
+import {
+  compareVersions,
+  parseOpenVsxRelease,
+  releaseUrl,
+  shouldInstall,
+  type OpenVsxRelease,
+} from '../../platform/extensionUpdates';
 import { Disposable } from '../../platform/lifecycle';
 import type { ILogger } from '../../platform/log';
 import type { ExtensionActivity, ExtensionInstallResult, ExtensionStatus } from '../../platform/protocol';
@@ -34,6 +43,8 @@ export interface ExtensionUpdaterOptions {
   readonly targetPlatform: string;
   /** The copy the windows run; undefined when none was found. */
   readonly running: LocatedExtension | undefined;
+  /** Another editor's copy (VSCodium's, VS Code's), if there is one: something to go back to. */
+  readonly external: LocatedExtension | undefined;
   readonly settings: () => UpdateSettings;
   readonly logger: ILogger;
 }
@@ -46,7 +57,7 @@ export class ExtensionUpdater extends Disposable {
   private activity: ExtensionActivity = { kind: 'idle' };
   private lastCheck: ExtensionStatus['lastCheck'];
   /** The check or install in progress; one at a time. */
-  private running: { readonly kind: 'check' | 'file'; readonly done: Promise<ExtensionInstallResult> } | undefined;
+  private running: { readonly kind: 'check' | 'other'; readonly done: Promise<ExtensionInstallResult> } | undefined;
   private readonly abort = new AbortController();
   private readonly changeEmitter = this.register(new Emitter<void>());
   readonly onDidChange: Event<void> = this.changeEmitter.event;
@@ -62,10 +73,12 @@ export class ExtensionUpdater extends Disposable {
 
   status(): ExtensionStatus {
     const running = this.options.running;
+    const rollback = this.rollbackTarget();
     return {
       ...(running ? { running: { version: running.version, path: running.path, kind: running.kind } } : {}),
       managed: this.options.store.state,
       activity: this.activity,
+      ...(rollback ? { rollback } : {}),
       ...(this.lastCheck ? { lastCheck: this.lastCheck } : {}),
       updatesApply: this.updatesApply,
     };
@@ -92,27 +105,86 @@ export class ExtensionUpdater extends Disposable {
     if (this.running) {
       return Promise.resolve(BUSY);
     }
-    return this.exclusive('file', async () => {
+    return this.exclusive('other', async () => {
       this.setActivity({ kind: 'installing', label: path.basename(file) });
       try {
-        return { outcome: 'installed', version: await this.options.store.install(file) };
+        const version = await this.options.store.install(file);
+        await this.backUpRunning(version);
+        return { outcome: 'installed', version };
       } catch (error) {
         return this.failure(error);
       }
     });
   }
 
-  /** Not while an install runs: it would make its own version pending afterwards. */
-  async rollBack(): Promise<string | undefined> {
-    if (this.running) {
+  /**
+   * What Go Back returns to, when the windows run a managed copy: the previous managed
+   * version, else another editor's older copy (as after the first update, which replaced it).
+   */
+  rollbackTarget(): ExtensionStatus['rollback'] {
+    const { running, external, store } = this.options;
+    const { current, previous } = store.state;
+    if (running?.kind !== 'managed' || running.version !== current) {
       return undefined;
     }
-    const version = await this.options.store.rollBack();
-    this.changeEmitter.fire();
-    return version;
+    if (previous !== undefined && store.isInstalled(previous)) {
+      return { version: previous, from: 'managed', path: store.versionDir(previous) };
+    }
+    if (external && compareVersions(external.version, current) < 0) {
+      return { version: external.version, from: 'external', path: external.path };
+    }
+    return undefined;
   }
 
-  private exclusive(kind: 'check' | 'file', work: () => Promise<ExtensionInstallResult>): Promise<ExtensionInstallResult> {
+  /**
+   * Back to the version before at the next start; another editor's copy is backed up into
+   * the store first. Not while an install runs: it would make its own version pending afterwards.
+   */
+  rollBack(): Promise<ExtensionInstallResult> {
+    if (this.running) {
+      return Promise.resolve(BUSY);
+    }
+    const target = this.rollbackTarget();
+    if (!target) {
+      return Promise.resolve({ outcome: 'failed', code: 'noPrevious', message: 'there is no version to go back to' });
+    }
+    return this.exclusive('other', async () => {
+      const { store } = this.options;
+      try {
+        if (target.from === 'external' && !store.isInstalled(target.version)) {
+          this.setActivity({ kind: 'backingUp', version: target.version });
+          await store.adopt(target.path, target.version);
+        }
+        await store.rollBackTo(target.version);
+        return { outcome: 'installed', version: target.version };
+      } catch (error) {
+        return this.failure(error);
+      }
+    });
+  }
+
+  /**
+   * The first managed copy is about to replace another editor's: back that one up, to go
+   * back to. A failed backup leaves the update in place (it is only logged).
+   */
+  private async backUpRunning(installed: string): Promise<void> {
+    const { running, store } = this.options;
+    const { current, previous } = store.state;
+    if (running?.kind !== 'external' || current !== undefined || previous !== undefined || running.version === installed) {
+      return;
+    }
+    this.setActivity({ kind: 'backingUp', version: running.version });
+    try {
+      if (!store.isInstalled(running.version)) {
+        await store.adopt(running.path, running.version);
+      }
+      await store.keepAsPrevious(running.version);
+    } catch (error) {
+      this.options.logger.warn(`backing up Claude Code ${running.version} from ${running.path} failed`, error);
+    }
+  }
+
+  private exclusive(kind: 'check' | 'other', work: () => Promise<ExtensionInstallResult>): Promise<ExtensionInstallResult> {
     const done = (async () => {
       try {
         return await work();
@@ -163,6 +235,7 @@ export class ExtensionUpdater extends Disposable {
           await fs.promises.rm(file, { force: true }).catch(() => undefined);
         }
       }
+      await this.backUpRunning(version);
       return { outcome: 'installed', version };
     } catch (error) {
       return this.failure(error);

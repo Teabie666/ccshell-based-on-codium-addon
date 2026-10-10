@@ -14,7 +14,7 @@ import {
   checkPackage,
   keptVersions,
   parseManagedExtensions,
-  rollBack,
+  rollBackTo,
   switchToPending,
   vsixIdentity,
   type ExtensionErrorCode,
@@ -120,29 +120,63 @@ export class ExtensionStore {
    * package must be that version (a download from Open VSX). Returns the version.
    */
   async install(vsixFile: string, expected?: string): Promise<string> {
-    await fs.promises.mkdir(this.dir, { recursive: true });
-    const staging = await fs.promises.mkdtemp(path.join(this.dir, STAGING_PREFIX));
-    try {
+    const version = await this.add(vsixFile, expected, async (staging) => {
       await this.unpack(vsixFile, staging);
-      const unpacked = path.join(staging, 'extension');
-      const manifest = readJsonFile<unknown>(path.join(unpacked, 'package.json'), undefined);
-      let identity: Readonly<Record<string, string>>;
       try {
-        identity = vsixIdentity(await fs.promises.readFile(path.join(staging, 'extension.vsixmanifest'), 'utf8'));
+        return vsixIdentity(await fs.promises.readFile(path.join(staging, 'extension.vsixmanifest'), 'utf8'));
       } catch {
         throw new ExtensionError('badPackage', `${vsixFile} has no extension.vsixmanifest`);
       }
+    });
+    await this.select(version);
+    return version;
+  }
+
+  /**
+   * Copies an extension folder another editor installed (VSCodium's, say) into the store, so
+   * that it stays even when that editor updates or removes its copy. Does not select it.
+   * Returns the version.
+   */
+  async adopt(folder: string, expected?: string): Promise<string> {
+    return this.add(folder, expected, async (staging) => {
+      try {
+        await fs.promises.cp(folder, path.join(staging, 'extension'), { recursive: true });
+      } catch (error) {
+        throw new ExtensionError('extract', `cannot copy ${folder}: ${(error as Error).message}`);
+      }
+      // VS Code keeps the package's manifest as `.vsixmanifest`; an older install may lack it.
+      const manifest = await fs.promises.readFile(path.join(staging, 'extension', '.vsixmanifest'), 'utf8').catch(() => '');
+      return vsixIdentity(manifest);
+    });
+  }
+
+  /**
+   * Puts a package into the store: `fill` brings it into a staging folder as `extension/`
+   * and returns the identity of its vsixmanifest; it is checked there and then moved to its
+   * version's folder, so a half-copied package never looks installed.
+   */
+  private async add(
+    source: string,
+    expected: string | undefined,
+    fill: (staging: string) => Promise<Readonly<Record<string, string>>>,
+  ): Promise<string> {
+    await fs.promises.mkdir(this.dir, { recursive: true });
+    const staging = await fs.promises.mkdtemp(path.join(this.dir, STAGING_PREFIX));
+    try {
+      const identity = await fill(staging);
+      const unpacked = path.join(staging, 'extension');
+      const manifest = readJsonFile<unknown>(path.join(unpacked, 'package.json'), undefined);
       const checked = checkPackage(manifest, identity, this.targetPlatform);
       if ('error' in checked) {
-        throw new ExtensionError(checked.error, `${vsixFile} is not the Claude Code extension for ${this.targetPlatform}`);
+        throw new ExtensionError(checked.error, `${source} is not the Claude Code extension for ${this.targetPlatform}`);
       }
       const { version } = checked;
       if (expected !== undefined && version !== expected) {
-        throw new ExtensionError('badPackage', `expected Claude Code ${expected}, the package has ${version}`);
+        throw new ExtensionError('badPackage', `expected Claude Code ${expected}, ${source} has ${version}`);
       }
       const main = (manifest as { main: string }).main;
       if (!fs.existsSync(path.join(unpacked, main))) {
-        throw new ExtensionError('badPackage', `${vsixFile} lacks its main file ${main}`);
+        throw new ExtensionError('badPackage', `${source} lacks its main file ${main}`);
       }
       // A version already installed is kept as it is: it may be the one running.
       if (!this.isInstalled(version)) {
@@ -150,8 +184,7 @@ export class ExtensionStore {
         await fs.promises.rm(target, { recursive: true, force: true });
         await fs.promises.rename(unpacked, target);
       }
-      await this.select(version);
-      this.logger.info(`installed Claude Code ${version} from ${vsixFile}`);
+      this.logger.info(`added Claude Code ${version} from ${source}`);
       return version;
     } finally {
       await fs.promises.rm(staging, { recursive: true, force: true }).catch((error: unknown) => {
@@ -169,15 +202,23 @@ export class ExtensionStore {
     await this.write(skipped === version ? unskipped : state);
   }
 
-  /** Goes back to the previous version at the next start. Returns it, or undefined if there is none. */
-  async rollBack(): Promise<string | undefined> {
-    const next = rollBack(this.stateValue);
-    if (next?.pending === undefined || !this.isInstalled(next.pending)) {
-      return undefined;
+  /** Goes back to an installed version at the next start; automatic updates skip the current one. */
+  async rollBackTo(version: string): Promise<void> {
+    if (!this.isInstalled(version)) {
+      throw new ExtensionError('noPrevious', `Claude Code ${version} is not in ${this.dir}`);
     }
-    await this.write(next);
-    this.logger.info(`rolling back Claude Code ${this.stateValue.current} -> ${next.pending} at the next start`);
-    return next.pending;
+    this.logger.info(`going back from Claude Code ${this.stateValue.current ?? '(none)'} to ${version} at the next start`);
+    await this.write(rollBackTo(this.stateValue, version));
+  }
+
+  /**
+   * Before the first managed copy replaces another editor's: that copy (adopted) is the
+   * version to go back to. Nothing changes once there is a managed current version.
+   */
+  async keepAsPrevious(version: string): Promise<void> {
+    if (this.stateValue.current === undefined && this.isInstalled(version)) {
+      await this.write({ ...this.stateValue, previous: version });
+    }
   }
 
   /** The current version activated: it is the one to come back to. */

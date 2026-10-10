@@ -1243,7 +1243,25 @@ function makeVsix(version, publisher = 'Anthropic') {
   return path.join(dir, 'package.zip');
 }
 
-// Last on purpose: the version installed here becomes current at the next start of this data folder.
+const readExtensionState = () => JSON.parse(readFileSync(path.join(dataDir, 'extensions', 'state.json'), 'utf8'));
+
+/** The workspace window with the settings editor on Extension Version; resolves to the page and the block. */
+async function openExtensionVersion() {
+  const main = await waitFor(async () => {
+    for (const candidate of shellPages()) {
+      if (showsFolder(await candidate.title(), workspace)) return candidate;
+    }
+    return undefined;
+  }, 30_000, 'the workspace window');
+  await press('Control+,');
+  await main.locator('#content-pane .settings-editor').waitFor({ timeout: 10_000 });
+  await main.locator('#content-pane .settings-search').fill('extension version');
+  const widget = main.locator('#content-pane .settings-widget[data-widget="extensionUpdates.version"]');
+  await widget.waitFor({ timeout: 5000 });
+  return { main, widget };
+}
+
+// Last on purpose: the versions installed here become current at the next starts of this data folder.
 await step('Extension Version in settings: Check for Updates installs from Open VSX; a VSIX of someone else is refused', async () => {
   const vsix = readFileSync(makeVsix('9.0.0'));
   const sha256 = createHash('sha256').update(vsix).digest('hex');
@@ -1270,31 +1288,23 @@ await step('Extension Version in settings: Check for Updates installs from Open 
   await new Promise((resolve) => openVsx.listen(0, '127.0.0.1', resolve));
   base = `http://127.0.0.1:${openVsx.address().port}`;
   try {
-    const main = await waitFor(async () => {
-      for (const candidate of shellPages()) {
-        if (showsFolder(await candidate.title(), workspace)) return candidate;
-      }
-      return undefined;
-    }, 10_000, 'the workspace window');
+    const { main, widget } = await openExtensionVersion();
     await main.evaluate((url) => window.vilausNative.invoke('settings.update', { key: 'vilaus.extension.openVsxUrl', value: url }), base);
-    await press('Control+,');
-    await main.locator('#content-pane .settings-editor').waitFor({ timeout: 10_000 });
-    await main.locator('#content-pane .settings-search').fill('extension version');
-    const widget = main.locator('#content-pane .settings-widget[data-widget="extensionUpdates.version"]');
-    await widget.waitFor({ timeout: 5000 });
     const current = await widget.locator('.extension-version-current').innerText();
-    if (!/^Claude Code \d/.test(current)) throw new Error(`the version in use reads "${current}"`);
+    const running = /^Claude Code (\S+)$/.exec(current)?.[1];
+    if (!running) throw new Error(`the version in use reads "${current}"`);
     const status = widget.locator('.extension-version-status');
 
     // The display language is Chinese by now (an earlier step switched it): find by class.
     await widget.locator('.extension-version-check').click();
     await waitFor(
       async () => (await widget.locator('.extension-version-pending').isVisible()) && (await status.innerText()).includes('9.0.0'),
-      30_000,
+      60_000,
       'the update to be downloaded and installed',
     );
-    const state = JSON.parse(readFileSync(path.join(dataDir, 'extensions', 'state.json'), 'utf8'));
-    if (state.pending !== '9.0.0') throw new Error(`state.json: ${JSON.stringify(state)}`);
+    // VSCodium's copy, the one running, is backed up as the version to go back to.
+    const state = readExtensionState();
+    if (state.pending !== '9.0.0' || state.previous !== running) throw new Error(`state.json: ${JSON.stringify(state)}`);
 
     // The file picker answers with a package from another publisher.
     const other = makeVsix('9.0.1', 'someone');
@@ -1304,18 +1314,66 @@ await step('Extension Version in settings: Check for Updates installs from Open 
     await widget.locator('.extension-version-install').click();
     const refused = /not the Claude Code extension|不是 Claude Code 插件/;
     await waitFor(async () => refused.test(await status.innerText()), 15_000, 'the refusal');
-    const after = JSON.parse(readFileSync(path.join(dataDir, 'extensions', 'state.json'), 'utf8'));
+    const after = readExtensionState();
     if (after.pending !== '9.0.0') throw new Error(`state.json after the refusal: ${JSON.stringify(after)}`);
     await main.screenshot({ path: path.join(runDir, 'extension-version.png') });
-    return `${current}; pending ${state.pending}`;
+    return `${current}; pending ${state.pending}, backed up ${state.previous}`;
   } finally {
     openVsx.close();
   }
 });
 
+await step('after a restart the update runs; Go Back and Restart returns to the backed-up copy, which works', async () => {
+  const before = readExtensionState();
+  const backup = before.previous;
+  if (!backup) throw new Error(`nothing backed up: ${JSON.stringify(before)}`);
+  const restart = async () => {
+    app = await electron.launch({
+      executablePath: electronPath,
+      args: ['.', '--user-data-dir', dataDir, '--secondary-display'],
+      cwd: root,
+      env,
+      timeout: 60_000,
+    });
+    page = await app.firstWindow();
+  };
+  await app.close();
+  await restart();
+  const { widget } = await openExtensionVersion();
+  const updated = await widget.locator('.extension-version-current').innerText();
+  if (updated !== 'Claude Code 9.0.0') throw new Error(`after the restart: "${updated}"`);
+  const previous = await widget.locator('.extension-version-previous').innerText();
+  if (!previous.includes(backup)) throw new Error(`the version before reads "${previous}"`);
+  const button = widget.locator('.extension-version-rollback');
+  if (await button.isDisabled()) throw new Error('Go Back is disabled');
+
+  // The test restarts the app itself: Go Back's restart just quits.
+  await app.evaluate(({ app: electronApp }) => {
+    electronApp.relaunch = () => {};
+  });
+  const closed = app.waitForEvent('close', { timeout: 30_000 });
+  await button.click();
+  await closed;
+  const rolledBack = readExtensionState();
+  if (rolledBack.pending !== backup || rolledBack.skipped !== '9.0.0') throw new Error(`state.json: ${JSON.stringify(rolledBack)}`);
+
+  // The backed-up copy is the real extension: it activates.
+  await restart();
+  await waitFor(() => {
+    const state = readExtensionState();
+    return state.current === backup && state.lastGood === backup;
+  }, 60_000, `Claude Code ${backup} from the backup to activate`);
+  const again = await openExtensionVersion();
+  const source = await again.widget.locator('.extension-version-source').innerText();
+  if (!source.includes(path.join(dataDir, 'extensions'))) throw new Error(`it runs from "${source}"`);
+  return `9.0.0 -> ${backup} from ${source}`;
+});
+
 await app.close();
 const failed = results.filter((ok) => !ok).length;
 console.log(`\n${results.length - failed}/${results.length} passed. Artifacts: ${runDir}`);
+// The extension copies the last steps installed (a few hundred MB): never kept.
+rmSync(path.join(dataDir, 'extensions'), { recursive: true, force: true, maxRetries: 10, retryDelay: 300 });
 if (failed === 0) {
   // The extension's processes may hold the folder a moment after the app closed.
   rmSync(workspace, { recursive: true, force: true, maxRetries: 10, retryDelay: 300 });

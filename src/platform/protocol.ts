@@ -375,7 +375,9 @@ export type ExtensionActivity =
   | { readonly kind: 'checking' }
   | { readonly kind: 'downloading'; readonly version: string; readonly received: number; readonly total?: number }
   /** `label`: the version, or the name of the .vsix file. */
-  | { readonly kind: 'installing'; readonly label: string };
+  | { readonly kind: 'installing'; readonly label: string }
+  /** Copying another editor's copy into the store, to go back to it later. */
+  | { readonly kind: 'backingUp'; readonly version: string };
 
 /** How a check for updates, or installing a .vsix, ended. */
 export type ExtensionInstallResult =
@@ -393,6 +395,11 @@ export interface ExtensionStatus {
   readonly running?: { readonly version: string; readonly path: string; readonly kind: 'cli' | 'managed' | 'external' };
   readonly managed: ManagedExtensions;
   readonly activity: ExtensionActivity;
+  /**
+   * The version Go Back returns to: the previous managed one, or (when there is none, as
+   * after the first update) another editor's older copy, which is backed up first.
+   */
+  readonly rollback?: { readonly version: string; readonly from: 'managed' | 'external'; readonly path: string };
   /** The last check for updates in this run, automatic or not. */
   readonly lastCheck?: ExtensionInstallResult & { readonly at: number; readonly manual: boolean };
   /** False with `--extension-dir`: that copy is used as it is, and nothing is updated. */
@@ -624,8 +631,8 @@ export type MainApiForRenderer = {
   'extension.check': (p: void) => ExtensionInstallResult;
   /** Picks a .vsix with the system's file picker and installs it. */
   'extension.installFile': (p: void) => ExtensionInstallResult;
-  /** Back to the previous version at the next start; resolves to it, or undefined if there is none. */
-  'extension.rollBack': (p: void) => string | undefined;
+  /** Back to the previous version at the next start (`installed`: that version is pending). */
+  'extension.rollBack': (p: void) => ExtensionInstallResult;
   /** The chords main should intercept and send back as `keybinding` events. */
   'window.setKeybindings': (p: { chords: readonly string[] }) => void;
   /** `delta` in zoom steps, or 0 to reset. Returns the new zoom level. */

@@ -14,7 +14,7 @@ import type { LocatedExtension } from '../../../src/host/main/extensionLocator';
 import {
   checkPackage,
   parseOpenVsxRelease,
-  rollBack,
+  rollBackTo,
   shouldInstall,
   switchToPending,
   vsixIdentity,
@@ -38,15 +38,20 @@ describe('extension update decisions', () => {
     assert.deepEqual(switchToPending({ current: '1.0.0', pending: '1.0.1' }, () => false), { current: '1.0.0' });
   });
 
-  test('rolling back makes the previous version pending and skips the current one', () => {
-    assert.deepEqual(rollBack({ current: '1.0.1', previous: '1.0.0', lastGood: '1.0.0' }), {
+  test('rolling back makes the target pending and skips the current version', () => {
+    assert.deepEqual(rollBackTo({ current: '1.0.1', previous: '1.0.0', lastGood: '1.0.0' }, '1.0.0'), {
       current: '1.0.1',
       previous: '1.0.0',
       lastGood: '1.0.0',
       pending: '1.0.0',
       skipped: '1.0.1',
     });
-    assert.equal(rollBack({ current: '1.0.1' }), undefined);
+    // Then at the next start the two swap places.
+    assert.deepEqual(switchToPending({ current: '1.0.1', previous: '1.0.0', pending: '1.0.0', skipped: '1.0.1' }, () => true), {
+      current: '1.0.0',
+      previous: '1.0.1',
+      skipped: '1.0.1',
+    });
   });
 
   test('what to install', () => {
@@ -201,7 +206,15 @@ describe('installing the extension', () => {
   const start = (): { store: ExtensionStore; updater: ExtensionUpdater } => {
     const store = new ExtensionStore(dir, PLATFORM, NullLogger);
     running = store.prepare();
-    const updater = new ExtensionUpdater({ store, fetch, targetPlatform: PLATFORM, running, settings, logger: NullLogger });
+    const updater = new ExtensionUpdater({
+      store,
+      fetch,
+      targetPlatform: PLATFORM,
+      running,
+      external: undefined,
+      settings,
+      logger: NullLogger,
+    });
     return { store, updater };
   };
 
@@ -239,7 +252,12 @@ describe('installing the extension', () => {
     await second.store.markGood('2.0.2');
     assert.equal(second.store.state.lastGood, '2.0.2');
 
-    assert.equal(await second.updater.rollBack(), '2.0.1');
+    assert.deepEqual(second.updater.status().rollback, {
+      version: '2.0.1',
+      from: 'managed',
+      path: second.store.versionDir('2.0.1'),
+    });
+    assert.deepEqual(await second.updater.rollBack(), { outcome: 'installed', version: '2.0.1' });
     const third = start();
     assert.equal(running?.version, '2.0.1');
     assert.deepEqual(third.store.state, { current: '2.0.1', previous: '2.0.2', lastGood: '2.0.2', skipped: '2.0.2' });
@@ -319,5 +337,90 @@ describe('installing the extension', () => {
     fs.rmSync(store.versionDir(current), { recursive: true, force: true });
     start();
     assert.equal(running?.version, previous);
+  });
+});
+
+/** An unpacked copy as VSCodium keeps it: no .vsixmanifest (or `.vsixmanifest`), just the files. */
+function makeFolder(version: string): LocatedExtension {
+  const folder = fs.mkdtempSync(path.join(root, `vscodium-${version}-`));
+  fs.writeFileSync(
+    path.join(folder, 'package.json'),
+    JSON.stringify({ publisher: 'Anthropic', name: 'claude-code', version, main: './extension.js' }),
+  );
+  fs.writeFileSync(path.join(folder, 'extension.js'), `exports.version = ${JSON.stringify(version)};\n`);
+  return { path: folder, version, source: path.dirname(folder), kind: 'external' };
+}
+
+describe("going back to another editor's copy", () => {
+  const server = new FakeOpenVsx();
+  let dir = '';
+  let running: LocatedExtension | undefined;
+  const settings = (): UpdateSettings => ({ openVsxUrl: server.url, pinned: undefined });
+  /** A start of the app with `external` installed elsewhere: the managed copy first, else that one. */
+  const start = (external?: LocatedExtension): { store: ExtensionStore; updater: ExtensionUpdater } => {
+    const store = new ExtensionStore(dir, PLATFORM, NullLogger);
+    running = store.prepare() ?? external;
+    const updater = new ExtensionUpdater({ store, fetch, targetPlatform: PLATFORM, running, external, settings, logger: NullLogger });
+    return { store, updater };
+  };
+
+  before(() => server.start());
+  after(() => server.stop());
+
+  test("the first update backs up the copy another editor had, as the version to go back to", async () => {
+    dir = path.join(root, 'backup-first');
+    const vscodium = makeFolder('2.0.0');
+    server.publish('2.1.0');
+    const first = start(vscodium);
+    assert.equal(running?.kind, 'external');
+    assert.deepEqual(await first.updater.check(false), { outcome: 'installed', version: '2.1.0' });
+    assert.deepEqual({ ...first.store.state }, { pending: '2.1.0', previous: '2.0.0' });
+    assert.ok(first.store.isInstalled('2.0.0'));
+
+    // VSCodium moves on (or the copy goes away): the backup stays.
+    fs.rmSync(vscodium.path, { recursive: true, force: true });
+    const second = start();
+    assert.equal(running?.version, '2.1.0');
+    assert.deepEqual(second.updater.status().rollback, {
+      version: '2.0.0',
+      from: 'managed',
+      path: second.store.versionDir('2.0.0'),
+    });
+    assert.deepEqual(await second.updater.rollBack(), { outcome: 'installed', version: '2.0.0' });
+    start();
+    assert.equal(running?.version, '2.0.0');
+    assert.equal(fs.readFileSync(path.join(running!.path, 'extension.js'), 'utf8'), 'exports.version = "2.0.0";\n');
+  });
+
+  test("without a backup, Go Back takes another editor's older copy into the store first", async () => {
+    dir = path.join(root, 'backup-later');
+    const file = path.join(root, 'later.vsix');
+    fs.writeFileSync(file, makeVsix('2.2.0'));
+    // Installed with nothing else around: no copy to back up.
+    await start().updater.installFile(file);
+    const vscodium = makeFolder('2.1.5');
+    const { store, updater } = start(vscodium);
+    assert.equal(running?.version, '2.2.0');
+    assert.equal(store.state.previous, undefined);
+    assert.deepEqual(updater.status().rollback, { version: '2.1.5', from: 'external', path: vscodium.path });
+    assert.deepEqual(await updater.rollBack(), { outcome: 'installed', version: '2.1.5' });
+    assert.ok(store.isInstalled('2.1.5'));
+    assert.deepEqual({ ...store.state }, { current: '2.2.0', pending: '2.1.5', skipped: '2.2.0' });
+    start(vscodium);
+    assert.equal(running?.kind, 'managed');
+    assert.equal(running?.version, '2.1.5');
+  });
+
+  test('nothing to go back to: no previous version, and no older copy elsewhere', async () => {
+    dir = path.join(root, 'backup-none');
+    const file = path.join(root, 'none.vsix');
+    fs.writeFileSync(file, makeVsix('2.3.0'));
+    await start().updater.installFile(file);
+    for (const external of [undefined, makeFolder('2.4.0')]) {
+      const { updater } = start(external);
+      assert.equal(updater.status().rollback, undefined);
+      const result = await updater.rollBack();
+      assert.equal(result.outcome === 'failed' && result.code, 'noPrevious');
+    }
   });
 });

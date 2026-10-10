@@ -37,7 +37,9 @@ export type ExtensionErrorCode =
   | 'badPackage'
   | 'extract'
   /** Another check or install is running. */
-  | 'busy';
+  | 'busy'
+  /** Going back: there is no version before the one in use. */
+  | 'noPrevious';
 
 export function compareVersions(a: string, b: string): number {
   const pa = a.split(/[.-]/).map((x) => Number.parseInt(x, 10) || 0);
@@ -80,14 +82,12 @@ export function switchToPending(state: ManagedExtensions, isInstalled: (version:
 }
 
 /**
- * Back to the previous version at the next start. The current one is then skipped by
- * automatic updates, until a newer one comes out. Undefined when there is nothing to go back to.
+ * Back to `version` (the previous one, or another editor's copy taken into the store) at
+ * the next start. The current one is then skipped by automatic updates, until a newer one
+ * comes out.
  */
-export function rollBack(state: ManagedExtensions): ManagedExtensions | undefined {
-  if (state.current === undefined || state.previous === undefined) {
-    return undefined;
-  }
-  return { ...state, pending: state.previous, skipped: state.current };
+export function rollBackTo(state: ManagedExtensions, version: string): ManagedExtensions {
+  return { ...state, pending: version, ...(state.current !== undefined ? { skipped: state.current } : {}) };
 }
 
 /** The versions whose directories are kept; the rest are removed at startup. */

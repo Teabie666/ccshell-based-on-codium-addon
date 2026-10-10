@@ -29,6 +29,7 @@ const ERROR_TEXT: Record<ExtensionErrorCode, () => string> = {
   badPackage: () => t('errorBadPackage'),
   extract: () => t('errorExtract'),
   busy: () => t('errorBusy'),
+  noPrevious: () => t('errorNoPrevious'),
 };
 
 /** What a check or an install ended with, for the status line; undefined says nothing. */
@@ -43,6 +44,11 @@ export function resultText(result: ExtensionInstallResult): string | undefined {
     default:
       return undefined;
   }
+}
+
+/** Why going back did not happen; undefined when it did. */
+export function rollBackFailedText(result: ExtensionInstallResult): string | undefined {
+  return result.outcome === 'failed' ? t('rollBackFailed', ERROR_TEXT[result.code]()) : undefined;
 }
 
 /** `12.3 / 120.5 MB (10%)`, or just the megabytes when the size is unknown. */
@@ -116,10 +122,16 @@ export const extensionUpdatesModule: ShellModule = {
       setNote(resultText(result));
       return result;
     };
-    const rollBack = async (): Promise<string | undefined> => {
-      const version = await native.call('extension.rollBack', undefined);
-      setNote(version ? t('rolledBack', version) : t('nothingToRollBack'));
-      return version;
+    /** One click: back to the version before, then a restart to use it (windows and conversations come back). */
+    const rollBack = async (): Promise<ExtensionInstallResult> => {
+      setNote(undefined);
+      const result = await native.call('extension.rollBack', undefined);
+      if (result.outcome === 'installed') {
+        relaunch();
+      } else {
+        setNote(rollBackFailedText(result));
+      }
+      return result;
     };
     const logged = <T>(action: () => Promise<T>) => (): void => {
       action().catch((error: unknown) => logger.error('extension action failed', error));
@@ -170,8 +182,8 @@ export const extensionUpdatesModule: ShellModule = {
       commands.register(
         'extension.rollBack',
         async () => {
-          const version = await rollBack();
-          notify(version ? t('rolledBack', version) : t('nothingToRollBack'), version === undefined);
+          const result = await rollBack();
+          notify(rollBackFailedText(result), true);
         },
         { title: t('rollBackCommand'), category },
       ),
@@ -239,7 +251,10 @@ class VersionView {
     this.pendingRow.classList.add('extension-version-pending');
     this.previousText = element('span', 'extension-version-text');
     this.rollBackButton = button('', actions.rollBack);
+    this.rollBackButton.classList.add('extension-version-rollback');
+    this.rollBackButton.title = t('rollBackTooltip');
     this.previousRow = row(this.previousText, this.rollBackButton);
+    this.previousRow.classList.add('extension-version-previous');
     this.checkButton = button(t('check'), actions.check);
     this.checkButton.classList.add('extension-version-check');
     this.installButton = button(t('installFile'), actions.installFile);
@@ -271,17 +286,25 @@ class VersionView {
     this.pendingRow.hidden = pending === undefined;
     this.pendingText.textContent = pending === undefined ? '' : t('pending', pending);
 
-    // Going back is to the version before the one in use, so only for a managed copy.
-    const previous = running?.kind === 'managed' && running.version === managed.current ? managed.previous : undefined;
-    const rolledBack = previous !== undefined && pending === previous;
-    this.previousRow.hidden = previous === undefined || rolledBack;
-    this.previousText.textContent = previous === undefined ? '' : t('previous', previous);
-    this.rollBackButton.textContent = previous === undefined ? '' : t('rollBack', previous);
+    // Shown even when there is nothing to go back to, so the way back is easy to find.
+    const target = status.rollback;
+    // With a switch pending, what the next start keeps as the version before (see switchToPending).
+    const keptForLater = pending !== undefined ? (managed.current ?? managed.previous) : undefined;
+    this.previousRow.hidden = !running || running.kind === 'cli';
+    this.previousText.textContent = target
+      ? target.from === 'managed'
+        ? t('previousManaged', target.version)
+        : t('previousExternal', target.version, target.path)
+      : keptForLater !== undefined && keptForLater !== pending
+        ? t('previousAfterRestart', keptForLater)
+        : t('noPrevious');
+    this.rollBackButton.textContent = target ? t('rollBackAndRestart', target.version) : t('rollBackUnavailable');
 
     const idle = activity.kind === 'idle';
-    for (const button of [this.checkButton, this.installButton, this.rollBackButton]) {
+    for (const button of [this.checkButton, this.installButton]) {
       button.disabled = !idle || !status.updatesApply;
     }
+    this.rollBackButton.disabled = !idle || !status.updatesApply || !target;
     this.statusText.textContent =
       activity.kind === 'checking'
         ? t('checking')
@@ -289,6 +312,8 @@ class VersionView {
           ? t('downloading', activity.version, progressText(activity.received, activity.total))
           : activity.kind === 'installing'
             ? t('installing', activity.label)
-            : (note ?? (status.lastCheck ? (resultText(status.lastCheck) ?? '') : ''));
+            : activity.kind === 'backingUp'
+              ? t('backingUp', activity.version)
+              : (note ?? (status.lastCheck ? (resultText(status.lastCheck) ?? '') : ''));
   }
 }

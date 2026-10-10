@@ -108,9 +108,9 @@ Monaco、Shiki 和 Markdown 渲染都在第一次用到时才加载（renderer �
 - **安装**：先解压到 `extensions\.staging-*`，检查完再改名成版本目录，所以半解压的包不会被当成装好了。解压用系统自带的 `C:\Windows\System32\tar.exe`（bsdtar，能解 zip；它默认拒绝 `..` 和绝对路径），不加依赖。检查：`package.json` 的发布者 `anthropic`、名字 `claude-code`、版本号、`main` 文件存在；`extension.vsixmanifest` 的 `TargetPlatform` 是本机平台（`win32-x64`）。
 - **更新**（`host/main/extensionUpdater.ts`，不依赖 Electron，网络请求从外面传进来：程序里是 `net.fetch`，走系统代理；单元测试里是 Node 的 fetch）：`GET <Open VSX>/api/anthropic/claude-code/win32-x64[/<版本>]` → 比较版本（`shouldInstall`）→ 下载 `.vsix`（跟随 302）到 `extensions\.downloads\`，边下边算 sha256，跟 Open VSX 公布的 `.sha256` 对 → 交给 store 安装、设成 `pending`。一次只跑一个；进度、结果作为 `ExtensionStatus` 推给所有窗口（`extensionStatus` 事件）。手动导入的 `.vsix` 没有校验值可比，只做上面的包检查。签名（`.sigzip`）没验。
 - **设置**：`vilaus.extension.autoUpdate`（默认开）、`vilaus.extension.version`（锁定版本：填了就装这个版本，可以往回装；空 = 跟最新）、`vilaus.extension.openVsxUrl`（Open VSX 或镜像）。自动检查在启动 15 秒后、之后每 12 小时、以及这三个设置改了时；`--extension-dir` 时不检查。自动装好后给最近用过的窗口发 `extensionUpdated`，弹"下次启动时使用"+「立即重启」。
-- **回滚**：设置界面的「退回 X」或命令面板：`pending = previous`、`skipped = current`，重启后生效。插件激活成功时记 `lastGood`；激活失败、而且这个版本是更新装上的、从没成功过、有上一个版本时，错误框里多一个"回到 X 并重启"。
+- **回滚**：设置界面的「退回 X 并重启」（一键：退回后马上重启，窗口和对话会恢复）或命令面板：`pending = 目标版本`、`skipped = current`（自动更新跳过退掉的版本，直到出了更新的），然后重启。目标是自己装的上一个版本；没有的话（比如第一次更新是在升级前没有备份的版本上做的），用其他编辑器里比当前旧的那份，先复制进 `extensions\`（备份）再切过去。**第一次更新时自动备份**：当时用的如果是 VSCodium / VS Code 那份，新版本装好后先把它复制进 `extensions\`、记为 `previous`，这样 VSCodium 之后更新或删掉它也能退回（约 240 MB，复制几秒）。没有可退回的版本时按钮灰掉并说明原因。插件激活成功时记 `lastGood`；激活失败、而且这个版本是更新装上的、从没成功过、有可退回的版本时，错误框里多一个"回到 X 并重启"。
 - **界面**（`features/extensionUpdates`）：设置编辑器"插件版本"一节，三个设置项上面是一个自定义块（`SettingsWidget`，`core/settings.ts` 的 `registerWidget`，设置编辑器把它画在所属分节的最前面，搜索按它的关键词过滤）：正在用的版本和来源、待切换的版本和「立即重启」、上一个版本和「退回」、「检查更新」「从 VSIX 安装...」和状态行（进度、结果、按错误码本地化的失败原因）。命令面板里也有这三个动作。
-- **测试**：单元测试用 bsdtar 现做小 `.vsix`、本机起假的 Open VSX（含 302、校验值不符、按版本查询），把下载 → 校验 → 安装 → 下次启动切换 → 回滚 → 清理整个跑一遍；界面测试的最后一步在设置里点"检查更新"、导入一个别人发布的 VSIX。界面测试和 smoke 的设置里关了自动更新（不然每个测试实例都会去 Open VSX 下 120 MB）。
+- **测试**：单元测试用 bsdtar 现做小 `.vsix`、本机起假的 Open VSX（含 302、校验值不符、按版本查询），把下载 → 校验 → 安装 → 下次启动切换 → 回滚 → 清理整个跑一遍，还有第一次更新时备份其他编辑器那份、没有备份时从其他编辑器那份退回。界面测试最后两步：在设置里点"检查更新"（VSCodium 那份被备份成上一个版本）、导入一个别人发布的 VSIX 被拒；重启后用的是新版本，点「退回 X 并重启」，再启动时跑的是备份出来的那份，真插件能激活。界面测试和 smoke 的设置里关了自动更新（不然每个测试实例都会去 Open VSX 下 120 MB），测试结束删掉装的插件。
 
 ## 评论（M3）
 
