@@ -4,6 +4,7 @@
 import { _electron as electron } from 'playwright-core';
 import electronPath from 'electron';
 import { spawn } from 'node:child_process';
+import { createServer } from 'node:http';
 import { mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 
@@ -894,6 +895,172 @@ await step('--prompt from a second start opens a conversation; a vilaus:// link 
     await waitFor(async () => (await tabCount()) === before + 1 - i, 10_000, 'the extra conversation to close');
   }
   return message;
+});
+
+// ---- M4: API providers ------------------------------------------------------------------------
+
+/** A stand-in for an Anthropic-compatible API on 127.0.0.1: records requests, answers briefly. */
+function startMockApi() {
+  const requests = [];
+  const server = createServer((request, response) => {
+    let text = '';
+    request.on('data', (chunk) => (text += chunk));
+    request.on('end', () => {
+      let body;
+      try {
+        body = JSON.parse(text);
+      } catch {
+        body = undefined;
+      }
+      requests.push({ method: request.method, url: request.url, headers: request.headers, body });
+      const url = request.url ?? '';
+      if (request.method === 'POST' && url.startsWith('/v1/messages/count_tokens')) {
+        response.writeHead(200, { 'content-type': 'application/json' });
+        response.end(JSON.stringify({ input_tokens: 1 }));
+        return;
+      }
+      if (request.method === 'POST' && url.startsWith('/v1/messages')) {
+        const message = {
+          id: 'msg_mock',
+          type: 'message',
+          role: 'assistant',
+          model: body?.model ?? 'mock',
+          content: [],
+          stop_reason: null,
+          stop_sequence: null,
+          usage: { input_tokens: 1, output_tokens: 1 },
+        };
+        if (body?.stream) {
+          const events = [
+            ['message_start', { type: 'message_start', message }],
+            ['content_block_start', { type: 'content_block_start', index: 0, content_block: { type: 'text', text: '' } }],
+            ['content_block_delta', { type: 'content_block_delta', index: 0, delta: { type: 'text_delta', text: 'MOCK-OK' } }],
+            ['content_block_stop', { type: 'content_block_stop', index: 0 }],
+            ['message_delta', { type: 'message_delta', delta: { stop_reason: 'end_turn', stop_sequence: null }, usage: { output_tokens: 1 } }],
+            ['message_stop', { type: 'message_stop' }],
+          ];
+          response.writeHead(200, { 'content-type': 'text/event-stream' });
+          response.end(events.map(([event, data]) => `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`).join(''));
+        } else {
+          response.writeHead(200, { 'content-type': 'application/json' });
+          response.end(JSON.stringify({ ...message, content: [{ type: 'text', text: 'MOCK-OK' }], stop_reason: 'end_turn' }));
+        }
+        return;
+      }
+      response.writeHead(404, { 'content-type': 'application/json' });
+      response.end(JSON.stringify({ type: 'error', error: { type: 'not_found_error', message: 'not in the mock' } }));
+    });
+  });
+  return new Promise((resolve) => server.listen(0, '127.0.0.1', () => resolve({ server, requests, port: server.address().port })));
+}
+
+/** Waits for the window to reload and show its conversations again; `start` triggers the reload. */
+const reloaded = async (start) => {
+  await page.evaluate(() => (window.__vilausBeforeReload = true));
+  await start();
+  await waitFor(
+    async () =>
+      (await page.evaluate(() => window.__vilausBeforeReload !== true).catch(() => false)) &&
+      (await tabCount()) >= 1 &&
+      webviewFrames().length >= 2,
+    30_000,
+    'the window to reload',
+  );
+};
+const reloadWindow = () => reloaded(() => page.evaluate(() => window.vilausNative.invoke('window.reload')));
+
+await step('an API provider: the title bar switches to it, and new Claude processes send its key and model', async () => {
+  const mock = await startMockApi();
+  try {
+    await page.evaluate(async (port) => {
+      await window.vilausNative.invoke('providers.save', {
+        provider: {
+          id: 'mock',
+          name: 'Mock API',
+          type: 'compatible',
+          baseUrl: `http://127.0.0.1:${port}`,
+          auth: 'bearer',
+          models: { main: 'mock-model', haiku: 'mock-haiku' },
+          color: '#ff0000',
+        },
+      });
+      await window.vilausNative.invoke('providers.setKey', { id: 'mock', key: 'test-key-123' });
+    }, mock.port);
+    if (readFileSync(path.join(dataDir, 'providers.json'), 'utf8').includes('test-key-123')) {
+      throw new Error('providers.json holds the key in clear');
+    }
+
+    await page.locator('.titlebar-provider').click();
+    const filter = page.locator('.quick-input-filter');
+    await filter.waitFor({ timeout: 5000 });
+    await filter.fill('Mock API');
+    await filter.press('Enter');
+    await waitFor(async () => (await page.locator('.titlebar-provider-label').innerText()) === 'Mock API', 5000, 'the provider in the title bar');
+    if (!(await page.evaluate(() => document.body.classList.contains('provider-accent')))) throw new Error('no accent line');
+    // The open conversation keeps its Claude process until the window reloads, as the notice offers.
+    const reload = page.locator('.toast .button', { hasText: 'Reload Window' });
+    await reload.waitFor({ timeout: 5000 });
+    await reloaded(() => reload.click());
+
+    // A new conversation (the first one holds comments that later steps expect).
+    const before = await tabCount();
+    await press('Control+N');
+    await waitFor(async () => (await tabCount()) === before + 1, 20_000, 'a new conversation');
+    const frame = await waitFor(conversationFrame, 10_000, 'the new conversation');
+    const input = frame.locator('[role="textbox"][aria-label="Message input"]');
+    await input.waitFor({ timeout: 30_000 });
+    await input.click();
+    await input.fill('hello mock');
+    await frame.locator('button[aria-label="Send message"]').click();
+    const request = await waitFor(
+      () => mock.requests.find((candidate) => candidate.body?.model === 'mock-model'),
+      60_000,
+      'a request for the main model at the mock API',
+    );
+    if (request.headers.authorization !== 'Bearer test-key-123') throw new Error(`authorization: ${request.headers.authorization}`);
+    if (request.headers['x-api-key']) throw new Error('an x-api-key went out too');
+    await press('Control+W');
+    await waitFor(async () => (await tabCount()) === before, 10_000, 'the conversation to close');
+    return `${mock.requests.length} requests at the mock; ${request.method} ${request.url}`;
+  } finally {
+    mock.server.close();
+    // Back to the subscription, with fresh processes, for the rest of the run.
+    await page.evaluate(() => window.vilausNative.invoke('providers.select', { id: 'subscription' })).catch(() => {});
+    await reloadWindow().catch(() => {});
+  }
+});
+
+await step('the providers editor adds a provider from a preset, saves edits and a key, and removes it', async () => {
+  await press('Control+Shift+P');
+  await page.locator('.quick-input-filter').fill('Manage API Providers');
+  await page.locator('.quick-input-filter').press('Enter');
+  const editor = page.locator('#content-pane .providers-editor');
+  await editor.waitFor({ timeout: 5000 });
+  await editor.locator('.providers-add').click();
+  await page.locator('.quick-input-filter').fill('DeepSeek');
+  await page.locator('.quick-input-filter').press('Enter');
+  const selected = editor.locator('.providers-list-item.selected .providers-list-label');
+  await waitFor(async () => (await selected.innerText().catch(() => '')) === 'DeepSeek', 5000, 'the new provider selected');
+  const baseUrl = await editor.locator('.setting-input[placeholder="ANTHROPIC_BASE_URL"]').inputValue();
+  if (baseUrl !== 'https://api.deepseek.com/anthropic') throw new Error(`base URL ${baseUrl}`);
+
+  const name = editor.locator('.providers-row').first().locator('.setting-input');
+  await name.fill('DeepSeek Work');
+  await editor.locator('.providers-save').click();
+  const saved = () => JSON.parse(readFileSync(path.join(dataDir, 'providers.json'), 'utf8'));
+  await waitFor(() => saved().providers.some((provider) => provider.name === 'DeepSeek Work'), 5000, 'the name in providers.json');
+  await editor.locator('.providers-key').fill('sk-deepseek-test');
+  await editor.locator('.button', { hasText: 'Save Key' }).click();
+  await waitFor(async () => (await editor.innerText()).includes('A key is stored'), 5000, 'the stored key');
+  if (JSON.stringify(saved()).includes('sk-deepseek-test')) throw new Error('the key is stored in clear');
+  await page.screenshot({ path: path.join(runDir, 'providers.png') });
+
+  await editor.locator('.providers-remove').click();
+  await page.locator('.modal .button', { hasText: 'Remove Provider' }).click();
+  await waitFor(() => !saved().providers.some((provider) => provider.name === 'DeepSeek Work'), 5000, 'the provider to go');
+  if (Object.keys(saved().keys).some((id) => id.startsWith('deepseek'))) throw new Error('its key stayed');
+  await page.locator('#content-pane .content-tab.active .tab-close').click();
+  return 'added, renamed, key stored encrypted, removed';
 });
 
 await page.screenshot({ path: path.join(runDir, 'final.png') });

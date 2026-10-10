@@ -9,7 +9,7 @@ import * as crypto from 'node:crypto';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
-import { app, dialog, ipcMain, session, shell } from 'electron';
+import { app, dialog, ipcMain, safeStorage, session, shell } from 'electron';
 import type { ParamsOf, ResultOf } from '../../platform/ipc';
 import { Disposable, toDisposable } from '../../platform/lifecycle';
 import type { ILogger, LogLevel } from '../../platform/log';
@@ -27,8 +27,15 @@ import {
   type ExtensionTranslations,
   type MainApiForRenderer,
   type MainEventsForRenderer,
+  type ProvidersState,
   type ThemeData,
 } from '../../platform/protocol';
+import {
+  DEFAULT_PROVIDER_SETTING,
+  providerSettingsOverlay,
+  SUBSCRIPTION_ID,
+  SUBSCRIPTION_PROVIDER,
+} from '../../platform/providers';
 import { APP_ORIGIN } from '../../platform/webviewUrls';
 import { extensionTranslations } from '../../nls/extensionPacks';
 import { languagePack } from '../../nls/packs';
@@ -38,6 +45,7 @@ import { installCcwProtocol } from './ccwProtocol';
 import type { CliArgs } from './cli';
 import { locateClaudeExtension, type LocatedExtension } from './extensionLocator';
 import { t } from './messages';
+import { ProviderStore, type SecretCipher } from './providerStore';
 import { SettingsStore } from './settingsStore';
 import { isExternalUrl, nextZoomLevel } from './shellWindow';
 import { StateStore } from './stateStore';
@@ -69,6 +77,13 @@ const THEME_SETTING_KEYS = new Set([
 /** Where the one window's placement and zoom were kept before there were several windows. */
 const LEGACY_WINDOW_STATE_KEY = 'vilaus.window';
 
+/** Provider keys at rest: Electron's safeStorage (DPAPI on Windows, for this Windows user). */
+const electronCipher: SecretCipher = {
+  available: () => safeStorage.isEncryptionAvailable(),
+  encrypt: (text) => safeStorage.encryptString(text).toString('base64'),
+  decrypt: (data) => safeStorage.decryptString(Buffer.from(data, 'base64')),
+};
+
 export interface ShellEnvironment {
   readonly args: CliArgs;
   readonly paths: AppPaths;
@@ -94,6 +109,7 @@ export class ShellApp extends Disposable implements WindowHost {
   /** The display language of this run; a different setting applies after a restart. */
   readonly language: UiLanguage;
   readonly extensionTable: ExtensionTranslations | undefined;
+  readonly providers: ProviderStore;
   private readonly shellState: StateStore;
   private readonly history: WindowHistory;
   private readonly themesDir: string;
@@ -127,6 +143,9 @@ export class ShellApp extends Disposable implements WindowHost {
       this.globalState.set(LEGACY_WINDOW_STATE_KEY, undefined);
     }
     this.currentZoom = this.history.zoomLevel() ?? 0;
+    this.providers = this.register(
+      new ProviderStore(env.paths.providersFile, electronCipher, this.logger.child('providers')),
+    );
     this.themesDir = path.join(env.appDir, 'themes');
     const themeId = env.args.theme ?? stringSetting(this.settings.all[THEME_SETTING]) ?? DEFAULT_THEME_ID;
     this.currentTheme = withFontVariables(loadTheme(this.themesDir, themeId, this.logger), this.settings.all);
@@ -168,6 +187,18 @@ export class ShellApp extends Disposable implements WindowHost {
     this.registerRendererHandlers();
     this.settings.watch();
     this.register(this.settings.onDidChange(({ keys }) => this.settingsChanged(keys)));
+    this.register(
+      this.providers.onDidChange(() => {
+        for (const window of this.windows) {
+          if (this.providers.get(window.provider)) {
+            window.providersChanged();
+          } else {
+            // Its provider was removed.
+            window.setProvider(SUBSCRIPTION_ID);
+          }
+        }
+      }),
+    );
     // A quit from elsewhere (app.quit()) would close the windows one by one, and only the
     // last would be restored; quit the way the Exit command does instead.
     const onBeforeQuit = (event: Electron.Event): void => {
@@ -198,7 +229,7 @@ export class ShellApp extends Disposable implements WindowHost {
   }
 
   /** Opens `folder` in a window of its own, or brings the window that shows it to the front. */
-  async openWindow(folder: string): Promise<WindowContext> {
+  async openWindow(folder: string, provider?: string): Promise<WindowContext> {
     const existing = this.windowFor(folder);
     if (existing) {
       existing.focus();
@@ -208,6 +239,7 @@ export class ShellApp extends Disposable implements WindowHost {
       id: this.nextWindowId++,
       folder,
       placement: this.placementFor(folder),
+      provider: provider && this.providers.get(provider) ? provider : this.initialProvider(folder),
     });
     this.windows.push(window);
     window.browserWindow.on('focus', () => this.markActive(window));
@@ -271,6 +303,25 @@ export class ShellApp extends Disposable implements WindowHost {
         window.globalStateChanged(key, value);
       }
     }
+  }
+
+  providerOverlay(providerId: string): Record<string, unknown> {
+    const provider = this.providers.get(providerId) ?? SUBSCRIPTION_PROVIDER;
+    return providerSettingsOverlay(provider, this.providers.key(provider.id), this.settings.all);
+  }
+
+  providersState(current: string): ProvidersState {
+    return { providers: this.providers.list(), current };
+  }
+
+  /** The folder's provider from last time, else the default setting's, else the subscription. */
+  initialProvider(folder: string): string {
+    const remembered = this.history.folderProvider(folder);
+    if (remembered && this.providers.get(remembered)) {
+      return remembered;
+    }
+    const preferred = this.settings.all[DEFAULT_PROVIDER_SETTING];
+    return typeof preferred === 'string' && this.providers.get(preferred) ? preferred : SUBSCRIPTION_ID;
   }
 
   appInfo(): AppInfo {
@@ -349,6 +400,13 @@ export class ShellApp extends Disposable implements WindowHost {
     if (!initial) {
       window.focus();
     }
+    if (args.provider) {
+      if (this.providers.get(args.provider)) {
+        this.selectProvider(window, args.provider);
+      } else {
+        this.logger.warn(`--provider ${args.provider}: no such provider`);
+      }
+    }
     if (args.session || args.prompt) {
       window.openConversation({ sessionId: args.session, prompt: args.prompt });
     }
@@ -369,6 +427,36 @@ export class ShellApp extends Disposable implements WindowHost {
     this.rememberOpenWindows();
     await window.shutdown();
     window.destroy();
+  }
+
+  /** The window's new conversations use `id` from now on, and its folder remembers it. */
+  private selectProvider(window: WindowContext, id: string): void {
+    window.setProvider(id);
+    this.history.rememberFolderProvider(window.folder, id);
+  }
+
+  /** A desktop shortcut that starts Vilausity with this provider (`--provider <id>`). */
+  private createShortcut(id: string): string {
+    const provider = this.providers.get(id);
+    if (!provider) {
+      throw new Error(`no provider ${id}`);
+    }
+    const label = (provider.name || 'Claude').replace(/[\\/:*?"<>|]+/g, ' ').trim();
+    const file = path.join(app.getPath('desktop'), `Vilausity (${label}).lnk`);
+    // In development the executable is electron.exe, which needs the app's folder first.
+    const args = [...(app.isPackaged ? [] : [`"${app.getAppPath()}"`]), '--provider', id].join(' ');
+    const written = shell.writeShortcutLink(file, fs.existsSync(file) ? 'replace' : 'create', {
+      target: process.execPath,
+      args,
+      description: `Vilausity - ${label}`,
+      icon: process.execPath,
+      iconIndex: 0,
+    });
+    if (!written) {
+      throw new Error(`could not write ${file}`);
+    }
+    this.logger.info(`created the shortcut ${file}`);
+    return file;
   }
 
   private windowFor(folder: string): WindowContext | undefined {
@@ -494,6 +582,17 @@ export class ShellApp extends Disposable implements WindowHost {
       'window.recentFolders': () => this.history.recentFolders(),
       'window.shownFolders': () => this.windows.map((window) => window.folder),
       'window.close': (_params, window) => this.requestClose(window),
+      'window.reload': (_params, window) => window.reload(),
+      'providers.select': ({ id }, window) => {
+        if (!this.providers.get(id)) {
+          throw new Error(`no provider ${id}`);
+        }
+        this.selectProvider(window, id);
+      },
+      'providers.save': ({ provider }) => this.providers.save(provider),
+      'providers.remove': ({ id }) => this.providers.remove(id),
+      'providers.setKey': ({ id, key }) => this.providers.setKey(id, key),
+      'providers.createShortcut': ({ id }) => this.createShortcut(id),
       'window.setKeybindings': ({ chords }, window) => window.window.setInterceptedChords(chords),
       'window.zoom': ({ delta }) => {
         // One level for all windows: Chromium zooms pages of the same origin together anyway.

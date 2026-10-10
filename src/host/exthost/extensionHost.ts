@@ -138,6 +138,10 @@ export class ExtensionHost {
     this.compat?.settingsChanged(settings, keys);
   }
 
+  settingsOverlayChanged(values: Readonly<Record<string, unknown>>): void {
+    this.compat?.overlayChanged(values);
+  }
+
   storageChanged(scope: StorageScope, key: string, value: unknown): void {
     this.compat?.storageChanged(scope, key, value);
   }

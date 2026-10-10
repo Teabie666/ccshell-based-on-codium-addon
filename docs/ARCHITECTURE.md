@@ -92,6 +92,15 @@ Monaco、Shiki 和 Markdown 渲染都在第一次用到时才加载（renderer �
 - **`vilaus://` 链接**：Windows 打开协议链接时把 URL 当参数传给程序，于是跟别的参数一样走单实例转发。`vilaus://<插件 id>/<路径>?<参数>` 交给那个插件用 `window.registerUriHandler` 注册的处理器（Claude Code 有 `/open?session=&prompt=`），之前照 VS Code 先问用户一次（网页也能放这种链接）。把协议登记进注册表在 M6 的安装包里做。
 - **插件调的 VS Code 内置命令**（`host/exthost/workbenchCommands.ts`）：`vscode.openFolder`（插件的"打开文件夹 / 在新窗口中打开"按钮，没给文件夹就弹选择框）交给渲染进程走上面同一套流程；`workbench.action.openSettings` 打开设置编辑器并填好搜索词；`revealFileInOS` 在资源管理器里选中文件。
 
+## API 接口（M4）
+
+- **数据**：`platform/providers.ts` 定义接口（类型、Base URL、鉴权方式、各档模型、请求头、超时、最大输出、关闭非必要流量、其他环境变量、强调色、来自哪个预设），以及接口 → 环境变量的纯函数（`providerEnvironment`），主进程、渲染进程和单元测试共用。内置的"Claude 订阅"不设任何变量。预设在 `features/providers/presets.ts`，按各家官方文档（2026-10-10），只是起点，每个带官方说明的链接。
+- **存储**：`providers.json` 只有主进程写（`host/main/providerStore.ts`）。密钥用 Electron 的 safeStorage 加密后存（Windows 上是 DPAPI，只有这个 Windows 用户能解开），系统不提供加密时拒绝保存，绝不存明文。渲染进程只知道有没有密钥（`ProviderSummary.hasKey`）：密钥在编辑页里输入后经 `providers.setKey` 交给主进程，再也不回到页面。
+- **怎么交给插件**：插件每次起 claude 进程时读 `claudeCode.environmentVariables`。主进程给每个窗口算一份"设置叠加层"（`providerSettingsOverlay`）：用户自己写在这个设置里的变量，同名的换成接口的（名字不分大小写），再加 `claudeCode.disableLoginPrompt: true`；随初始化数据和 `settings.overlay` 交给这个窗口的插件进程，compat 的配置层读设置时把它盖在用户设置上面。settings.json 和设置界面里看不到叠加层，插件写设置也只写用户那一层（插件只写 `focusView` 等三个键，不写这个）。用 bearer 时清空 `ANTHROPIC_API_KEY`、用 API key 时清空 `ANTHROPIC_AUTH_TOKEN`，免得用户环境里残留的那个盖过我们的。
+- **每个窗口一个接口**：标题栏「API 接口 ▾」（`features/providers`）切换，新对话立即用新接口；已经打开的对话还是原来的 claude 进程，提示里"重新加载窗口"会重启插件进程、恢复对话，新进程就用新接口了。每个文件夹记住自己上次用的接口（`state/shell.json`），第一次打开的文件夹用设置 `vilaus.provider.default`（默认订阅）。`--provider <id>` 给参数交到的那个窗口指定接口。接口有颜色时，标题栏底边一条 2px 色线、按钮前一个色块；订阅不加。
+- **编辑页**是内容面板的标签页（"管理 API 接口"）：左边列表和"添加 API 接口…"（从预设选），右边表单，显式保存。"为此接口创建桌面快捷方式"写一个 `.lnk`：`Vilausity.exe --provider <id>`（开发时是 electron.exe 加 app 目录）。
+- **测试**：界面测试在 127.0.0.1 起一个假的 Anthropic 接口，切到指向它的接口、重新加载窗口、新对话发一句话，检查假接口收到的 `Authorization: Bearer <key>` 和模型名；不花钱也不联网。
+
 ## 评论（M3）
 
 在内容面板里选中文字写评论，评论显示在对话输入框正上方，随下一条消息发给 Claude（照插件计划评论的做法）。

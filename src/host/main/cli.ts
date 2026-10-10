@@ -21,6 +21,8 @@ export interface CliArgs {
   readonly session?: string;
   /** A prompt for the conversation that opens. */
   readonly prompt?: string;
+  /** The API provider (its id) for the window the arguments go to. */
+  readonly provider?: string;
   readonly goto?: GotoTarget;
   /** Load the Claude Code extension from this directory instead of the managed copy. */
   readonly extensionDir?: string;
@@ -42,6 +44,7 @@ export const HELP_TEXT = `Usage: vilaus [folder] [options]
   --session <id>                  Open this Claude Code conversation
   --prompt <text>                 Open a new conversation with this text in its input
   --goto <file[:line[:column]]>   Open a file at a line
+  --provider <id>                 Use this API provider in the window
   --extension-dir <dir>           Load the Claude Code extension from this folder
   --user-data-dir <dir>           Keep settings, state and logs here (a separate instance)
   --theme <id>                    Start with this color theme
@@ -79,6 +82,7 @@ export function parseCliArgs(argv: readonly string[], cwd = process.cwd()): CliA
       session: { type: 'string' },
       prompt: { type: 'string' },
       goto: { type: 'string' },
+      provider: { type: 'string' },
       'extension-dir': { type: 'string' },
       'user-data-dir': { type: 'string' },
       'log-level': { type: 'string' },
@@ -102,6 +106,7 @@ export function parseCliArgs(argv: readonly string[], cwd = process.cwd()): CliA
     session: str(values.session),
     prompt: str(values.prompt),
     goto: parseGoto(str(values.goto), cwd),
+    provider: str(values.provider),
     extensionDir: resolvePath(str(values['extension-dir'])),
     userDataDir: resolvePath(str(values['user-data-dir'])),
     logLevel: str(values['log-level']),

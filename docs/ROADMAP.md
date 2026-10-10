@@ -14,7 +14,7 @@
 
 每个阶段结束都要做：typecheck、`npm test`、`node tests/ui.mjs`（动了 bridge / compat 再跑 `npm run smoke`）；看最新一次的 `shim-unimplemented.log`；确认没往 `C:\Program Files\VSCodium` 写任何东西、git 里没有密钥；用屏幕工具截图，跟 VSCodium 里的同一界面对比；用 `run-dev.cmd` 试用。
 
-测试现状（2026-10-10）：单元 253/253，语言包 0 条缺译（插件界面对照表 1454 条），界面 41/41，smoke 13/13（M4 第①块后，用 Anthropic 兼容接口跑的）。
+测试现状（2026-10-10）：单元 263/263，语言包 0 条缺译（插件界面对照表 1454 条），界面 43/43，smoke 13/13（M4 第①块后，用 Anthropic 兼容接口跑的）。
 
 ## M0 技术验证：完成（2026-10-08）
 
@@ -160,18 +160,18 @@ M2 试用后加的。原来 PLAN 砍掉了设置图形界面，改为图形界�
 - [x] 插件调的内置命令：`vscode.openFolder`（插件的"打开文件夹"走它，不用在 bridge 拦截）、`workbench.action.openSettings`（打开设置编辑器并预填搜索词）、`revealFileInOS`
 - [x] 测试和文档：CLI 解析、窗口记录和恢复顺序的单元测试；界面测试：第二个窗口、换文件夹后对话恢复、关窗口、第二次启动转发文件夹 / `--goto` / `--prompt` / `vilaus://` 链接、不带文件夹启动时恢复窗口；ARCHITECTURE 的"窗口和工作区"、[ADR 0004](adr/0004-one-process-many-windows.md)
 
-### ② API 接口（`features/providers`）
+### ② API 接口（`features/providers`）：完成（2026-10-10，待试用）
 
-开工前再研究、再确认：预设列哪些（base URL、模型名查各家官方文档）、强调色怎么显示、要不要从 VSCodium 的配置档导入接口。
+2026-10-10 定（PLAN 的"API 接口模式"一节也记了）：预设是国内四家加国际站，外加"自定义兼容接口"；强调色 = 标题栏底边 2px 色线 + 按钮前色块，订阅不加；不做从 VSCodium 导入；新文件夹用设置里的默认接口，之后每个文件夹记住自己的。
 
-- [ ] 接口配置：`type`（subscription / anthropic-api / compatible / bedrock / vertex / foundry）、`baseUrl`、鉴权方式（apiKey → `ANTHROPIC_API_KEY`，bearer → `ANTHROPIC_AUTH_TOKEN`）、模型映射（主模型，Opus / Sonnet / Haiku / Fable 各档，子代理，模型选择器里显示的 `_NAME` / `_DESCRIPTION`，额外的自定义模型选项）、自定义请求头、超时、最大输出、关闭非必要流量、任意额外环境变量
-- [ ] 切换接口 = 改写传给插件的 `claudeCode.environmentVariables`（加上 `disableLoginPrompt` 和 `CLAUDE_CODE_SKIP_AUTH_LOGIN`）；新开的对话生效，已经打开的对话提示重开
-- [ ] 标题栏「API 接口 ▾」切换；CLI `--provider <id>`；窗口用不同的强调色区分接口
-- [ ] 内置预设（数据文件）：Claude 订阅、Anthropic API、DeepSeek、Kimi、GLM、Qwen…，用户可以增删
-- [ ] 密钥用 Electron `safeStorage`（Windows DPAPI）加密存放，绝不明文写进 settings.json，绝不进安装包
-- [ ] 从 VSCodium 的 DeepSeek 配置档（`profiles\-68229e90`）导入成一个"DeepSeek"接口，导入后密钥立即加密（待定，见上）
-- [ ] "为此接口创建快捷方式"（比如 `Vilausity.exe --provider deepseek`）
-- [ ] 单元测试：接口生成的环境变量；smoke：本机起一个假接口，切到指向它的接口发一句话，检查它收到的 key、模型名和请求头（不花钱、不联网）
+- [x] 接口配置：`type`（subscription / anthropic-api / compatible / bedrock / vertex / foundry）、`baseUrl`、鉴权方式（apiKey → `ANTHROPIC_API_KEY`，bearer → `ANTHROPIC_AUTH_TOKEN`）、模型映射（主模型，Opus / Sonnet / Haiku / Fable 各档，子代理，模型选择器里显示的 `_NAME` / `_DESCRIPTION`，额外的自定义模型选项）、自定义请求头、超时、最大输出、关闭非必要流量、任意额外环境变量
+- [x] 切换接口 = 改写传给插件的 `claudeCode.environmentVariables`（加上 `disableLoginPrompt` 和 `CLAUDE_CODE_SKIP_AUTH_LOGIN`）；新开的对话生效，已经打开的对话提示重开
+- [x] 标题栏「API 接口 ▾」切换；CLI `--provider <id>`；窗口用不同的强调色区分接口
+- [x] 内置预设（数据文件）：Claude 订阅、Anthropic API、DeepSeek、Kimi、GLM、Qwen…，用户可以增删
+- [x] 密钥用 Electron `safeStorage`（Windows DPAPI）加密存放，绝不明文写进 settings.json，绝不进安装包
+- ~~从 VSCodium 的 DeepSeek 配置档导入成一个"DeepSeek"接口~~：不做（2026-10-10）
+- [x] "为此接口创建快捷方式"（比如 `Vilausity.exe --provider deepseek`；会往桌面写文件，没有自动测试，留到试用时手点）
+- [x] 单元测试：接口生成的环境变量、叠加层、读写校验；界面测试（不是 smoke）：本机起一个假接口，切到指向它的接口发一句话，检查它收到的 key 和模型名；编辑页从预设添加、改名、存密钥（文件里没有明文）、删除
 
 ### ③ 插件管理（脱离 VSCodium）
 

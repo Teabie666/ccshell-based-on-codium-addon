@@ -35,6 +35,7 @@ const RECENT_KEY = 'recentFolders';
 const OPEN_KEY = 'openWindows';
 const RESTORE_ALL_KEY = 'restoreAllWindows';
 const ZOOM_KEY = 'zoomLevel';
+const FOLDER_PROVIDERS_KEY = 'folderProviders';
 
 const MAX_PLACEMENTS = 50;
 const MAX_RECENT = 20;
@@ -98,6 +99,25 @@ export class WindowHistory {
     const restoreAll = this.store.get(RESTORE_ALL_KEY) === true;
     this.store.set(RESTORE_ALL_KEY, undefined);
     return restoreAll;
+  }
+
+  /** The API provider a folder's window used last. */
+  folderProvider(folder: string): string | undefined {
+    const providers = this.store.get(FOLDER_PROVIDERS_KEY);
+    const id = isRecord(providers) ? providers[normalizeForCompare(folder)] : undefined;
+    return typeof id === 'string' ? id : undefined;
+  }
+
+  rememberFolderProvider(folder: string, id: string): void {
+    const providers = this.store.get(FOLDER_PROVIDERS_KEY);
+    const entries = Object.entries(isRecord(providers) ? providers : {}).filter(
+      ([key]) => key !== normalizeForCompare(folder),
+    );
+    // Most recent last; the oldest go first when there are too many.
+    this.store.set(
+      FOLDER_PROVIDERS_KEY,
+      Object.fromEntries([...entries, [normalizeForCompare(folder), id]].slice(-MAX_PLACEMENTS)),
+    );
   }
 
   zoomLevel(): number | undefined {

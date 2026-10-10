@@ -29,6 +29,8 @@ export interface CompatHostHandle {
   readonly host: CompatHost;
   /** Main reported that settings.json changed. */
   settingsChanged(settings: Readonly<Record<string, unknown>>, keys: readonly string[]): void;
+  /** Main reported another settings overlay for this window (its API provider changed). */
+  overlayChanged(values: Readonly<Record<string, unknown>>): void;
   /** Main reported a stored value another window changed. */
   storageChanged(scope: StorageScope, key: string, value: unknown): void;
 }
@@ -66,7 +68,11 @@ export function createCompatHost(options: {
 }): CompatHostHandle {
   const { init, main, renderer, logger } = options;
 
-  let settingsValues: Readonly<Record<string, unknown>> = init.settings;
+  // What the extension reads: the user's settings with the window's overlay (its API
+  // provider) on top. Writes still go to the user's settings only.
+  let userSettings: Readonly<Record<string, unknown>> = init.settings;
+  let overlay: Readonly<Record<string, unknown>> = init.settingsOverlay ?? {};
+  let settingsValues: Readonly<Record<string, unknown>> = { ...userSettings, ...overlay };
   const settingsEmitter = new Emitter<{ readonly keys: readonly string[] }>();
 
   // Kept current with this host's writes and other windows' changes, so a Memento created
@@ -235,8 +241,19 @@ export function createCompatHost(options: {
   return {
     host,
     settingsChanged(settings, keys) {
-      settingsValues = settings;
+      userSettings = settings;
+      settingsValues = { ...userSettings, ...overlay };
       settingsEmitter.fire({ keys });
+    },
+    overlayChanged(values) {
+      const keys = [...new Set([...Object.keys(overlay), ...Object.keys(values)])].filter(
+        (key) => JSON.stringify(overlay[key]) !== JSON.stringify(values[key]),
+      );
+      overlay = values;
+      settingsValues = { ...userSettings, ...overlay };
+      if (keys.length > 0) {
+        settingsEmitter.fire({ keys });
+      }
     },
     storageChanged(scope, key, value) {
       storeValue(scope, key, value);

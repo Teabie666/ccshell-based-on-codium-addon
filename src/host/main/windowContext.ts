@@ -16,9 +16,11 @@ import type {
   ExtensionTranslations,
   ExtHostInitData,
   MainEventsForRenderer,
+  ProvidersState,
   RendererInitData,
   ThemeData,
 } from '../../platform/protocol';
+import { ENVIRONMENT_SETTING } from '../../platform/providers';
 import { URI } from 'vscode-uri';
 import { workspaceKey } from '../node/paths';
 import type { GotoTarget } from './cli';
@@ -47,6 +49,11 @@ export interface WindowHost {
   openExternal(url: string): Promise<boolean>;
   /** The zoom level all windows share. */
   readonly zoomLevel: number;
+  /** The extension settings a provider lays over the user's (its environment variables). */
+  providerOverlay(providerId: string): Record<string, unknown>;
+  providersState(current: string): ProvidersState;
+  /** The provider a folder's window starts with (remembered, else the default). */
+  initialProvider(folder: string): string;
   /** This window's extension host changed a global state value; the other windows' hosts need it too. */
   globalStateChanged(source: WindowContext, key: string, value: unknown): void;
   /** The user closed the window (its close button, Alt+F4). */
@@ -58,6 +65,8 @@ export interface WindowOptions {
   readonly id: number;
   readonly folder: string;
   readonly placement: WindowPlacement;
+  /** The API provider (its id). */
+  readonly provider: string;
 }
 
 export class WindowContext extends Disposable {
@@ -70,6 +79,7 @@ export class WindowContext extends Disposable {
   private currentFolders: readonly string[] = [];
   private currentWorkspaceKey = '';
   private currentWorkspaceState: StateStore | undefined;
+  private currentProvider: string;
   private extHost: ExtHostProcess | undefined;
   /** The extension host has its init data: it takes requests now. */
   private initialized = false;
@@ -90,6 +100,7 @@ export class WindowContext extends Disposable {
     this.logger = env.logger.child(`window${options.id}`);
     this.logsDir = env.paths.windowLogs(options.id);
     this.setWorkspace(options.folder);
+    this.currentProvider = options.provider;
     this.window = this.register(
       new ShellWindow({
         theme: host.theme,
@@ -187,6 +198,8 @@ export class WindowContext extends Disposable {
     await this.stopExtHost();
     await this.workspaceState.flush();
     this.setWorkspace(folder);
+    // Each folder keeps its own provider.
+    this.currentProvider = this.host.initialProvider(folder);
     this.webContents.reload();
   }
 
@@ -200,7 +213,30 @@ export class WindowContext extends Disposable {
       workspaceFolders: this.folders,
       appVersion: app.getVersion(),
       language: this.host.language,
+      providers: this.host.providersState(this.currentProvider),
     };
+  }
+
+  /** The API provider (its id) this window's new conversations use. */
+  get provider(): string {
+    return this.currentProvider;
+  }
+
+  /**
+   * Uses another provider (or the same one, edited): new conversations get its variables,
+   * the ones open keep theirs until they restart (`reload`).
+   */
+  setProvider(id: string): void {
+    this.currentProvider = id;
+    this.providersChanged();
+  }
+
+  /** The providers or this window's provider changed: the page and the extension host follow. */
+  providersChanged(): void {
+    if (this.extHost && this.initialized) {
+      this.extHost.rpc.notify('settings.overlay', { values: this.host.providerOverlay(this.currentProvider) });
+    }
+    this.window.emit('providersChanged', this.host.providersState(this.currentProvider));
   }
 
   /** settings.json changed: both the page and the extension host read settings. */
@@ -208,6 +244,18 @@ export class WindowContext extends Disposable {
     const values = this.host.settings.all;
     this.extHost?.rpc.notify('settings.didChange', { settings: values, keys });
     this.window.emit('settingsChanged', { values, keys });
+    // The provider's variables are laid over the user's own: those changed, so did the result.
+    if (keys.includes(ENVIRONMENT_SETTING) && this.extHost && this.initialized) {
+      this.extHost.rpc.notify('settings.overlay', { values: this.host.providerOverlay(this.currentProvider) });
+    }
+  }
+
+  /** Restarts the extension host and reloads the page; the conversations come back with new Claude processes. */
+  async reload(): Promise<void> {
+    this.logger.info('reloading');
+    await this.stopExtHost();
+    await this.workspaceState.flush();
+    this.webContents.reload();
   }
 
   /** Another window changed a global state value. */
@@ -374,6 +422,7 @@ export class WindowContext extends Disposable {
       // Whatever the setting says now: the extension host follows it as it changes.
       extensionTranslations: this.host.extensionTable,
       openConversation: this.takePendingConversation(),
+      settingsOverlay: this.host.providerOverlay(this.currentProvider),
     };
   }
 

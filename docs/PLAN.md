@@ -177,10 +177,10 @@ Electron main ── 窗口、CLI、单实例、配置/状态存储（唯一写�
   - 模型映射：主模型，Opus / Sonnet / Haiku / Fable 各档，子代理，以及模型选择器里显示的名字和描述（`_NAME`、`_DESCRIPTION`）、额外的自定义模型选项；
   - 自定义请求头、超时、最大输出、是否关闭非必要流量，以及任意额外环境变量。
 - **实现**：切换接口就是改写传给插件的 `claudeCode.environmentVariables`（加上 `disableLoginPrompt` 和 `CLAUDE_CODE_SKIP_AUTH_LOGIN`），之后新开的对话生效，已经打开的对话会提示重开。
-- **预设**以数据文件的形式内置：Claude 订阅、Anthropic API、DeepSeek、Kimi、GLM、Qwen…，用户可以增删。
+- **预设**以数据文件的形式内置：Claude 订阅、Anthropic API、DeepSeek、Kimi、GLM、Qwen…，用户可以增删。（2026-10-10 定：国内四家加国际站（Kimi moonshot.ai、智谱 Z.ai、阿里云新加坡），另有"自定义兼容接口"模板；地址和模型名按各家官方文档，模型名变得快，预设只是起点，每个带官方说明的链接。）
 - **密钥**用 Electron `safeStorage`（Windows DPAPI）加密存放，绝不以明文写进 settings.json，也绝不进安装包。
-- **导入**：从 VSCodium 的 DeepSeek 配置档 `profiles\-68229e90` 导入成一个"DeepSeek"接口，导入后密钥立即加密。
-- 菜单里可以"为此接口创建快捷方式"（例如给 DeepSeek 接口生成快捷方式：`Vilausity.exe --provider deepseek`）。窗口用不同的强调色区分接口。
+- ~~**导入**：从 VSCodium 的 DeepSeek 配置档 `profiles\-68229e90` 导入成一个"DeepSeek"接口，导入后密钥立即加密。~~（2026-10-10 定：不做，跟导入设置一样砍掉；选 DeepSeek 预设、把 key 粘进接口编辑页就行。）
+- 菜单里可以"为此接口创建快捷方式"（例如给 DeepSeek 接口生成快捷方式：`Vilausity.exe --provider deepseek`）。窗口用不同的强调色区分接口。（2026-10-10 定：订阅不加颜色；其他接口在标题栏底边加一条 2px 色线，「API 接口 ▾」按钮前一个色块。一个文件夹第一次打开时用设置里的默认接口（初始是订阅），之后每个文件夹记住自己上次用的。）
 
 ## 配置和 CLI
 

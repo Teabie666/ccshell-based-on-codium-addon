@@ -13,6 +13,7 @@
  */
 
 import type { UiLanguage, UiLanguageSetting } from './nls';
+import type { ProviderConfig, ProviderSummary } from './providers';
 
 // ---------------------------------------------------------------------------
 // Shared data types
@@ -95,6 +96,11 @@ export interface ExtHostInitData {
    * --prompt), instead of the new one a window shows when it has none to restore.
    */
   readonly openConversation?: ConversationRequest;
+  /**
+   * Settings laid over the user's for this window (its API provider: the extension's
+   * environment variables, no login prompt). Never written to settings.json.
+   */
+  readonly settingsOverlay?: Readonly<Record<string, unknown>>;
 }
 
 /** A conversation to open: a session to continue, and / or a prompt for it. */
@@ -359,6 +365,13 @@ export interface RendererInitData {
   readonly appVersion: string;
   /** The display language for this run; a change takes a restart. */
   readonly language: UiLanguage;
+  readonly providers: ProvidersState;
+}
+
+/** The API providers (without keys) and the one this window uses. */
+export interface ProvidersState {
+  readonly providers: readonly ProviderSummary[];
+  readonly current: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -386,6 +399,8 @@ export type MainApiForExtHost = {
 export type ExtHostApiForMain = {
   init: (p: ExtHostInitData) => void;
   'settings.didChange': (p: { settings: Readonly<Record<string, unknown>>; keys: readonly string[] }) => void;
+  /** The window's settings overlay changed (another API provider, or the same one edited). */
+  'settings.overlay': (p: { values: Readonly<Record<string, unknown>> }) => void;
   /**
    * Another window's extension host changed a stored value. Global state is shared by all
    * windows (VS Code syncs `globalState` across windows too); `value: undefined` deleted it.
@@ -554,6 +569,23 @@ export type MainApiForRenderer = {
   'window.shownFolders': (p: void) => string[];
   /** Closes the calling window; closing the last one quits. */
   'window.close': (p: void) => void;
+  /**
+   * Reloads the calling window with a new extension host: its conversations come back
+   * with new Claude processes (which then use the window's current API provider).
+   */
+  'window.reload': (p: void) => void;
+
+  // ---- API providers (keys go to main and never come back) ----
+  /** Makes the calling window use another provider; new conversations use it. */
+  'providers.select': (p: { id: string }) => void;
+  /** Adds a provider or replaces the one with its id. */
+  'providers.save': (p: { provider: ProviderConfig }) => ProviderSummary;
+  /** Windows that used it switch to the subscription. */
+  'providers.remove': (p: { id: string }) => void;
+  /** Stores the key encrypted; no key removes it. */
+  'providers.setKey': (p: { id: string; key?: string }) => void;
+  /** A desktop shortcut that starts Vilausity with this provider; resolves to its path. */
+  'providers.createShortcut': (p: { id: string }) => string;
   /** The chords main should intercept and send back as `keybinding` events. */
   'window.setKeybindings': (p: { chords: readonly string[] }) => void;
   /** `delta` in zoom steps, or 0 to reset. Returns the new zoom level. */
@@ -579,6 +611,8 @@ export type MainEventsForRenderer = {
   settingsChanged: { readonly values: Readonly<Record<string, unknown>>; readonly keys: readonly string[] };
   /** The extension's UI text is translated with this table now (null: it is not). */
   extensionTranslationsChanged: { readonly translations: ExtensionTranslations | null };
+  /** Providers were added, edited or removed, or the window uses another one. */
+  providersChanged: ProvidersState;
 };
 
 export interface MainEventMessage<K extends keyof MainEventsForRenderer = keyof MainEventsForRenderer> {
