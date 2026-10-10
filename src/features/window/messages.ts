@@ -9,4 +9,7 @@ export const t = defineMessages('window', {
   zoomOut: 'Zoom Out',
   resetZoom: 'Reset Zoom',
   toggleDevTools: 'Toggle Developer Tools',
+  administrator: 'Administrator',
+  administratorTooltip:
+    'This instance runs as administrator: Claude can change what needs administrator rights. It has windows and state of its own; settings and API providers are shared with the normal instance.',
 });

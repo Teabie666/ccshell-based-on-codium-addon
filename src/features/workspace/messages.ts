@@ -8,6 +8,7 @@ export const t = defineMessages('workspace', {
   openRecent: 'Open Recent...',
   newWindow: 'New Window',
   revealFolder: 'Reveal Folder in File Explorer',
+  openAsAdministrator: 'Open This Folder as Administrator',
   recent: 'recent',
   browse: 'Browse...',
   pickToOpen: 'Select a folder to open (Ctrl+Enter: in a new window)',

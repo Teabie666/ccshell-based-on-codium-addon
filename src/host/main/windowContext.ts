@@ -119,6 +119,13 @@ export class WindowContext extends Disposable {
         openExternal: (url) => void host.openExternal(url),
       }),
     );
+    if (env.paths.elevated) {
+      // The taskbar and Alt+Tab say so too; the page's own title stays as it is.
+      this.browserWindow.on('page-title-updated', (event, title) => {
+        event.preventDefault();
+        this.browserWindow.setTitle(t('administratorTitle', title));
+      });
+    }
     this.webContents.on('did-finish-load', () => {
       void this.startExtHost().catch((error: unknown) => this.logger.error('failed to start extension host', error));
     });
@@ -241,6 +248,7 @@ export class WindowContext extends Disposable {
       appVersion: app.getVersion(),
       language: this.host.language,
       providers: this.host.providersState(this.currentProvider),
+      elevated: this.host.env.paths.elevated,
     };
   }
 

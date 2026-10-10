@@ -5,6 +5,7 @@
  * extension host.
  */
 
+import { execFile } from 'node:child_process';
 import * as crypto from 'node:crypto';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
@@ -54,6 +55,7 @@ import type { AppPaths } from './appPaths';
 import { installCcwProtocol } from './ccwProtocol';
 import type { CliArgs } from './cli';
 import { locateClaudeExtension, type LocatedExtension } from './extensionLocator';
+import { elevatedStartScript } from './elevation';
 import { ExtensionStore } from './extensionStore';
 import { ExtensionUpdater, type UpdateSettings } from './extensionUpdater';
 import { findGit } from './gitLocator';
@@ -609,11 +611,18 @@ export class ShellApp extends Disposable implements WindowHost {
 
   /**
    * Installs what Open VSX offers, if automatic updates are on; the version is used from the
-   * next start. Not before the first install: the first-run page asks for that.
+   * next start. Not before the first install: the first-run page asks for that. Only the
+   * normal instance updates on its own; the administrator instance shares what it installs.
    */
   private checkForUpdatesAutomatically(): void {
     const updater = this.updater;
-    if (!this.located || !updater?.updatesApply || this.settings.all[AUTO_UPDATE_SETTING] === false || this.quitting) {
+    if (
+      !this.located ||
+      !updater?.updatesApply ||
+      this.env.paths.elevated ||
+      this.settings.all[AUTO_UPDATE_SETTING] === false ||
+      this.quitting
+    ) {
       return;
     }
     void updater.check(false).then((result) => {
@@ -689,6 +698,7 @@ export class ShellApp extends Disposable implements WindowHost {
       'window.recentFolders': () => this.history.recentFolders(),
       'window.shownFolders': () => this.windows.map((window) => window.folder),
       'window.close': (_params, window) => this.requestClose(window),
+      'window.openFolderAsAdministrator': ({ folder }) => this.startAdministratorInstance(folder),
       'window.reload': (_params, window) => window.reload(),
       'providers.select': ({ id }, window) => {
         if (!this.providers.get(id)) {
@@ -771,6 +781,34 @@ export class ShellApp extends Disposable implements WindowHost {
       this.shellState.set(GIT_NOTICE_KEY, true);
     }
     return { gitMissing };
+  }
+
+  /** The administrator instance on `folder`, with this instance's data folder; Windows asks first (UAC). */
+  private startAdministratorInstance(folder: string): Promise<void> {
+    const args = [
+      // In development the executable is electron.exe, which needs the app's folder first.
+      ...(app.isPackaged ? [] : [app.getAppPath()]),
+      folder,
+      ...(this.env.args.userDataDir ? ['--user-data-dir', this.env.args.userDataDir] : []),
+    ];
+    const script = elevatedStartScript(process.execPath, args);
+    const powershell = path.join(process.env.SystemRoot ?? 'C:\\Windows', 'System32', 'WindowsPowerShell', 'v1.0', 'powershell.exe');
+    return new Promise((resolve) => {
+      execFile(
+        powershell,
+        ['-NoProfile', '-NonInteractive', '-EncodedCommand', Buffer.from(script, 'utf16le').toString('base64')],
+        { windowsHide: true },
+        (error, _stdout, stderr) => {
+          if (error) {
+            // Declined at the UAC prompt, most likely.
+            this.logger.info(`the administrator instance did not start: ${String(stderr).trim() || error.message}`);
+          } else {
+            this.logger.info(`asked Windows to start the administrator instance on ${folder}`);
+          }
+          resolve();
+        },
+      );
+    });
   }
 
   private requireUpdater(): ExtensionUpdater {

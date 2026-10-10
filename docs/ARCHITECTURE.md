@@ -122,6 +122,16 @@ Monaco、Shiki 和 Markdown 渲染都在第一次用到时才加载（renderer �
 - **Git**：`host/main/gitLocator.ts` 在 Claude Code 找 Git 的地方找：`CLAUDE_CODE_GIT_BASH_PATH`、PATH、`Program Files\Git`、`%LOCALAPPDATA%\Programs\Git`。找不到时，第一个来问的窗口（`app.startupNotices`）弹一条提示：用途、「下载 Git for Windows」「不再提示」。只提示一次，记在 `state\shell.json`，不限于首次启动。
 - **测试**：开关 `--ignore-other-editors` 不找 VSCodium / VS Code 的插件（只给测试用，不写进 `--help`）。界面测试起一个全新数据目录的实例，加这个开关、PATH 里去掉 Git：检查首次启动页和 Git 提示 → 从本机假 Open VSX 下载安装 → 插件不重启就激活 → 第 2 步选 API 接口、从预设加 DeepSeek → 存了密钥后窗口切过去。
 
+## 管理员实例（M4）
+
+- **怎么判断**（`host/main/elevation.ts`）：能列出 `System32\config\systemprofile` 就是管理员（只有 SYSTEM 和 Administrators 能读；没提升的令牌里 Administrators 只用于拒绝）。`VILAUS_ELEVATED=1` / `0` 强制指定：测试一律设 0，因为测试常从提升过权限的终端里启动。
+- **哪些分开、哪些共用**（`AppPaths`）：管理员实例的 `instanceRoot` 是 `<数据目录>\admin`，state（窗口、最近的文件夹、插件的 globalState / workspaceState）、logs、Chromium 配置、插件的 globalStorage / workspaceStorage 都在它下面。Electron 的 userData 也指向它，所以单实例锁也是自己的：管理员实例可以跟普通实例同时开，第二次启动只转发给同一种实例。settings.json、providers.json、`extensions\` 共用。
+- **API 密钥共用**（`host/main/safeStorageKey.ts`）：safeStorage 加密用的主密钥存在 Chromium 配置的 `Local State` 里（`os_crypt.encrypted_key`，本身由 DPAPI 按 Windows 用户加密）。启动时（拿到单实例锁之后、Chromium 读 `Local State` 之前）互相同步：管理员实例用普通实例的主密钥；普通实例自己没有时才用管理员实例的。这依赖 Chromium 的 `Local State` 格式；格式哪天变了，后果只是管理员实例解不开普通实例存的密钥，在管理员实例里重新输入就行。实测：主密钥第一次生成后约 10 秒内写盘，正常退出时一定会写。
+- **插件目录共用**：store 每次修改都基于磁盘上最新的 `state.json`（`update()`），两个进程不会互相覆盖。清理旧版本时先改名再删：Windows 不允许给里面有打开文件的文件夹改名，所以另一个实例正在用的版本、正在写的下载不会被删掉一半。只有普通实例会自动检查更新；管理员实例里可以手动检查更新、回滚。
+- **怎么标出来**：标题栏有"管理员"徽标（用 `activityErrorBadge` 的颜色）；原生窗口标题后面加 " [Administrator]"（在 `page-title-updated` 里改，页面自己的 `document.title` 不变）。
+- **入口**：Windows 的"以管理员身份运行"；普通实例「文件夹 ▾」里的"以管理员身份打开此文件夹"（命令 `workspace.openAsAdministrator`）：主进程用 PowerShell 的 `Start-Process -Verb RunAs` 启动，Windows 弹 UAC 确认。参数按 CommandLineToArgvW 的规则加引号，开发时带上 app 目录，有 `--user-data-dir` 时也带上。
+- **测试**：单元测试覆盖强制开关、路径、命令行引号、主密钥同步。界面测试在普通实例运行时再起一个强制管理员的实例，检查徽标、窗口标题、它的主进程用 safeStorage 能解开普通实例存的密钥、它自己的 state 和 Chromium 目录。UAC 那一步没有自动测试。
+
 ## 评论（M3）
 
 在内容面板里选中文字写评论，评论显示在对话输入框正上方，随下一条消息发给 Claude（照插件计划评论的做法）。
@@ -170,5 +180,6 @@ Monaco、Shiki 和 Markdown 渲染都在第一次用到时才加载（renderer �
 | `providers.json` | API 接口（密钥用 safeStorage 加密） | main |
 | `extensions\` | 自己装的 Claude Code 插件（每个版本一个目录）和 `state.json`（当前、上一个、待切换的版本） | main |
 | `chromium\` | Chromium 自己的缓存等 | Electron |
+| `admin\` | 管理员实例自己的 state、logs、chromium、插件存储（结构同上） | 管理员实例 |
 
 Claude 的会话记录和登录凭据在 `~\.claude\`，由 Claude CLI 管理，跟 VSCodium 里的插件共用。

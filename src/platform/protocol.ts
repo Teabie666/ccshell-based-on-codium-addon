@@ -367,6 +367,8 @@ export interface RendererInitData {
   /** The display language for this run; a change takes a restart. */
   readonly language: UiLanguage;
   readonly providers: ProvidersState;
+  /** The administrator instance (elevated): the title bar says so. */
+  readonly elevated: boolean;
 }
 
 /** What the extension updater is doing. */
@@ -615,6 +617,11 @@ export type MainApiForRenderer = {
   'window.shownFolders': (p: void) => string[];
   /** Closes the calling window; closing the last one quits. */
   'window.close': (p: void) => void;
+  /**
+   * Starts the administrator instance (elevated) on a folder: Windows asks the user to
+   * confirm. Resolves once the request is handed to Windows (or was refused).
+   */
+  'window.openFolderAsAdministrator': (p: { folder: string }) => void;
   /**
    * Reloads the calling window with a new extension host: its conversations come back
    * with new Claude processes (which then use the window's current API provider).

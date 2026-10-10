@@ -1,6 +1,10 @@
 /**
  * Where vilaus keeps its data. Everything the app writes lives under one root
  * (`%APPDATA%\Vilausity` by default) so an install in Program Files stays read-only.
+ *
+ * An administrator instance (elevated) runs next to the normal one, so what one process
+ * owns is its own: state, logs, the Chromium profile and the extension's storage go under
+ * `<root>\admin`. Settings, API providers and the installed extensions are shared.
  */
 
 import * as fs from 'node:fs';
@@ -8,6 +12,9 @@ import * as path from 'node:path';
 
 export interface AppPaths {
   readonly root: string;
+  /** This instance's own folder: `root`, or `root\admin` for the administrator instance. */
+  readonly instanceRoot: string;
+  readonly elevated: boolean;
   readonly settingsFile: string;
   readonly globalStateFile: string;
   /** What main itself remembers (windows, recent folders), apart from the extension's state. */
@@ -18,6 +25,8 @@ export interface AppPaths {
   readonly extensionsDir: string;
   /** Chromium's own profile data (cache, local storage), kept apart from ours. */
   readonly chromium: string;
+  /** The other instance's Chromium profile (normal or administrator): safeStorage shares its key. */
+  readonly otherChromium: string;
   readonly logsRoot: string;
   /** Logs for this run only. */
   readonly sessionLogs: string;
@@ -33,24 +42,30 @@ export interface AppPaths {
 const EXTENSION_ID = 'anthropic.claude-code';
 const KEPT_LOG_SESSIONS = 10;
 
-export function createAppPaths(root: string, startedAt = new Date()): AppPaths {
+const ADMIN_FOLDER = 'admin';
+
+export function createAppPaths(root: string, startedAt = new Date(), elevated = false): AppPaths {
   const stamp = startedAt.toISOString().replace(/[-:]/g, '').replace(/\..+$/, '');
-  const logsRoot = path.join(root, 'logs');
+  const instanceRoot = elevated ? path.join(root, ADMIN_FOLDER) : root;
+  const logsRoot = path.join(instanceRoot, 'logs');
   const sessionLogs = path.join(logsRoot, stamp);
   return {
     root,
+    instanceRoot,
+    elevated,
     settingsFile: path.join(root, 'settings.json'),
-    globalStateFile: path.join(root, 'state', 'global.json'),
-    shellStateFile: path.join(root, 'state', 'shell.json'),
+    globalStateFile: path.join(instanceRoot, 'state', 'global.json'),
+    shellStateFile: path.join(instanceRoot, 'state', 'shell.json'),
     providersFile: path.join(root, 'providers.json'),
     extensionsDir: path.join(root, 'extensions'),
-    chromium: path.join(root, 'chromium'),
+    chromium: path.join(instanceRoot, 'chromium'),
+    otherChromium: elevated ? path.join(root, 'chromium') : path.join(root, ADMIN_FOLDER, 'chromium'),
     logsRoot,
     sessionLogs,
     windowLogs: (windowId) => path.join(sessionLogs, `window${windowId}`),
-    extensionGlobalStorage: path.join(root, 'globalStorage', EXTENSION_ID),
-    workspaceStateFile: (key) => path.join(root, 'state', 'workspaces', `${key}.json`),
-    extensionWorkspaceStorage: (key) => path.join(root, 'workspaceStorage', key, EXTENSION_ID),
+    extensionGlobalStorage: path.join(instanceRoot, 'globalStorage', EXTENSION_ID),
+    workspaceStateFile: (key) => path.join(instanceRoot, 'state', 'workspaces', `${key}.json`),
+    extensionWorkspaceStorage: (key) => path.join(instanceRoot, 'workspaceStorage', key, EXTENSION_ID),
   };
 }
 

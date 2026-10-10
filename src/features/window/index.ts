@@ -1,4 +1,7 @@
-/** Window-level features: title, closing and quitting, zoom, developer tools. */
+/**
+ * Window-level features: title, closing and quitting, zoom, developer tools; in the
+ * administrator instance, a badge in the title bar.
+ */
 
 import type { ShellModule } from '../../core/module';
 import { CommandCategory } from '../../core/messages';
@@ -7,7 +10,7 @@ import { t } from './messages';
 
 export const windowModule: ShellModule = {
   id: 'window',
-  activate({ services, subscriptions }) {
+  async activate({ services, subscriptions }) {
     const layout = services.get(ILayout);
     const commands = services.get(ICommands);
     const keybindings = services.get(IKeybindings);
@@ -21,6 +24,13 @@ export const windowModule: ShellModule = {
     app.className = 'titlebar-app';
     app.textContent = 'Vilausity';
     brand.append(app);
+    if ((await native.call('app.getInitData', undefined)).elevated) {
+      const badge = document.createElement('span');
+      badge.className = 'titlebar-admin';
+      badge.textContent = t('administrator');
+      badge.title = t('administratorTooltip');
+      brand.append(badge);
+    }
     subscriptions.add(layout.addTitleBarItem('left', brand, 10));
     document.title = `${workspace.name} - Vilausity`;
 

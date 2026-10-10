@@ -17,6 +17,7 @@ export const t = defineMessages('main', {
   rollBackAndRestart: 'Go Back to {0} and Restart',
   close: 'Close',
   installVsixTitle: 'Install Claude Code from a VSIX File',
+  administratorTitle: '{0} [Administrator]',
   vsixFiles: 'VSIX Packages',
   extensionHostExited: 'Exit code {0}. Logs: {1}',
 });

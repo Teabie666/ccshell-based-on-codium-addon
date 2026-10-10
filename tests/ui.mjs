@@ -6,7 +6,7 @@ import electronPath from 'electron';
 import { execFileSync, spawn } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { createServer } from 'node:http';
-import { mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 
 const root = path.resolve(import.meta.dirname, '..');
@@ -29,6 +29,9 @@ const env = { ...process.env };
 for (const name of Object.keys(env)) {
   if (name.toUpperCase() === 'ELECTRON_RUN_AS_NODE' || name.toUpperCase().startsWith('VSCODE_')) delete env[name];
 }
+// The normal instance even when the run starts from an elevated shell (an administrator
+// instance keeps its state apart and marks its windows).
+env.VILAUS_ELEVATED = '0';
 
 const results = [];
 async function step(name, fn) {
@@ -1349,6 +1352,41 @@ await step('first run: no extension, no Git -> install from Open VSX without a r
     openVsx.close();
     rmSync(path.join(firstData, 'extensions'), { recursive: true, force: true, maxRetries: 10, retryDelay: 300 });
   }
+});
+
+await step('administrator instance: runs next to the normal one, says so, and reads the API keys the normal one stored', async () => {
+  const stored = readJson(path.join(dataDir, 'providers.json'))?.keys?.mock;
+  if (!stored) throw new Error('the normal instance stored no key');
+  const adminWorkspace = path.join(runDir, 'admin-workspace');
+  mkdirSync(adminWorkspace, { recursive: true });
+  const admin = await electron.launch({
+    executablePath: electronPath,
+    args: ['.', '--user-data-dir', dataDir, '--folder', adminWorkspace, '--secondary-display'],
+    cwd: root,
+    env: { ...env, VILAUS_ELEVATED: '1' },
+    timeout: 60_000,
+  });
+  let title;
+  try {
+    const adminPage = await admin.firstWindow();
+    await adminPage.locator('.titlebar-admin').waitFor({ timeout: 30_000 });
+    // The display language is Chinese by now (an earlier step switched it).
+    title = await waitFor(async () => {
+      const titles = await admin.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().map((w) => w.getTitle()));
+      return titles.find((candidate) => / \[(Administrator|管理员)\]$/.test(candidate));
+    }, 10_000, 'the window title to say so');
+    // safeStorage there decrypts what the normal instance encrypted: one key for both.
+    const key = await admin.evaluate(({ safeStorage }, data) => safeStorage.decryptString(Buffer.from(data, 'base64')), stored);
+    if (key !== 'test-key-123') throw new Error(`decrypted "${key}"`);
+    // The normal instance is still there.
+    await page.title();
+  } finally {
+    await admin.close();
+  }
+  for (const own of [['state', 'shell.json'], ['chromium', 'Local State']]) {
+    if (!existsSync(path.join(dataDir, 'admin', ...own))) throw new Error(`no admin\\${own.join('\\')}`);
+  }
+  return `${title}; the key is shared`;
 });
 
 // Last on purpose: the versions installed here become current at the next starts of this data folder.

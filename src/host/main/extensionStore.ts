@@ -4,7 +4,9 @@
  * `extension/` folder), and `state.json` next to them saying which one is current, which
  * one is kept to roll back to, and which one becomes current at the next start. Switching
  * only ever happens at startup, before an extension host has loaded anything. Main is the
- * only user. No Electron here.
+ * only user; the normal and the administrator instance share the folder, so changes are
+ * made to the state as it is on disk, and a version another process has files open in is
+ * never deleted. No Electron here.
  */
 
 import { execFile } from 'node:child_process';
@@ -42,6 +44,8 @@ export function systemTar(): string {
 const STATE_FILE = 'state.json';
 /** Packages are unpacked here first, so a half-unpacked one never looks installed. */
 const STAGING_PREFIX = '.staging-';
+/** A folder is renamed to this before it is deleted (see removeUnkept). */
+const REMOVING_PREFIX = '.removing-';
 /** Downloads in progress; see ExtensionUpdater. */
 export const DOWNLOADS_DIR = '.downloads';
 const UNPACK_TIMEOUT_MS = 10 * 60_000;
@@ -195,11 +199,13 @@ export class ExtensionStore {
 
   /** Makes an installed version current at the next start (or keeps the current one). */
   async select(version: string): Promise<void> {
-    const { pending: _replaced, ...rest } = this.stateValue;
-    const state: ManagedExtensions = version === rest.current ? rest : { ...rest, pending: version };
-    // Chosen on purpose: no longer skipped.
-    const { skipped, ...unskipped } = state;
-    await this.write(skipped === version ? unskipped : state);
+    await this.update((current) => {
+      const { pending: _replaced, ...rest } = current;
+      const state: ManagedExtensions = version === rest.current ? rest : { ...rest, pending: version };
+      // Chosen on purpose: no longer skipped.
+      const { skipped, ...unskipped } = state;
+      return skipped === version ? unskipped : state;
+    });
   }
 
   /** Goes back to an installed version at the next start; automatic updates skip the current one. */
@@ -207,8 +213,10 @@ export class ExtensionStore {
     if (!this.isInstalled(version)) {
       throw new ExtensionError('noPrevious', `Claude Code ${version} is not in ${this.dir}`);
     }
-    this.logger.info(`going back from Claude Code ${this.stateValue.current ?? '(none)'} to ${version} at the next start`);
-    await this.write(rollBackTo(this.stateValue, version));
+    await this.update((current) => {
+      this.logger.info(`going back from Claude Code ${current.current ?? '(none)'} to ${version} at the next start`);
+      return rollBackTo(current, version);
+    });
   }
 
   /**
@@ -216,25 +224,35 @@ export class ExtensionStore {
    * version to go back to. Nothing changes once there is a managed current version.
    */
   async keepAsPrevious(version: string): Promise<void> {
-    if (this.stateValue.current === undefined && this.isInstalled(version)) {
-      await this.write({ ...this.stateValue, previous: version });
-    }
+    await this.update((current) =>
+      current.current === undefined && this.isInstalled(version) ? { ...current, previous: version } : undefined,
+    );
   }
 
   /** The current version activated: it is the one to come back to. */
   async markGood(version: string): Promise<void> {
-    if (this.stateValue.current === version && this.stateValue.lastGood !== version) {
-      await this.write({ ...this.stateValue, lastGood: version });
-    }
+    await this.update((current) =>
+      current.current === version && current.lastGood !== version ? { ...current, lastGood: version } : undefined,
+    );
   }
 
-  private write(state: ManagedExtensions): Promise<void> {
-    this.stateValue = state;
+  /**
+   * Changes the state as it is on disk now (the other instance may have changed it since),
+   * one change at a time; `change` returns undefined to leave it as it is.
+   */
+  private update(change: (state: ManagedExtensions) => ManagedExtensions | undefined): Promise<void> {
     const file = path.join(this.dir, STATE_FILE);
-    const write = this.writeQueue.then(() => writeFileAtomic(file, serialize(state)));
+    const run = this.writeQueue.then(async () => {
+      const onDisk = fs.existsSync(file) ? parseManagedExtensions(readJsonFile(file, undefined)) : this.stateValue;
+      const next = change(onDisk);
+      this.stateValue = next ?? onDisk;
+      if (next !== undefined) {
+        await writeFileAtomic(file, serialize(next));
+      }
+    });
     // A failed write must not fail the ones queued after it.
-    this.writeQueue = write.catch(() => undefined);
-    return write;
+    this.writeQueue = run.catch(() => undefined);
+    return run;
   }
 
   private unpack(vsixFile: string, into: string): Promise<void> {
@@ -268,16 +286,28 @@ export class ExtensionStore {
     for (const name of names) {
       const stale =
         name.startsWith(STAGING_PREFIX) ||
+        name.startsWith(REMOVING_PREFIX) ||
         name === DOWNLOADS_DIR ||
         (name.startsWith(`${CLAUDE_EXTENSION_ID}-`) && !kept.has(name));
       if (!stale) {
         continue;
       }
+      // Renamed first: Windows refuses to rename a folder with a file open in it, so a version
+      // the other instance runs (or a download it is writing) stays whole.
+      const doomed = name.startsWith(REMOVING_PREFIX) ? name : `${REMOVING_PREFIX}${process.pid}-${Date.now()}-${name}`;
       try {
-        fs.rmSync(path.join(this.dir, name), { recursive: true, force: true });
+        if (doomed !== name) {
+          fs.renameSync(path.join(this.dir, name), path.join(this.dir, doomed));
+        }
+      } catch {
+        this.logger.info(`${name} in ${this.dir} is in use; kept for now`);
+        continue;
+      }
+      try {
+        fs.rmSync(path.join(this.dir, doomed), { recursive: true, force: true });
         this.logger.info(`removed ${name} from ${this.dir}`);
       } catch (error) {
-        // Something still has a file open; next start then.
+        // Left as .removing-*: the next start tries again.
         this.logger.warn(`cannot remove ${name} from ${this.dir}`, error);
       }
     }

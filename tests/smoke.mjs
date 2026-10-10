@@ -79,6 +79,9 @@ const env = { ...process.env };
 for (const name of Object.keys(env)) {
   if (name.toUpperCase() === 'ELECTRON_RUN_AS_NODE' || name.toUpperCase().startsWith('VSCODE_')) delete env[name];
 }
+// The normal instance even when the run starts from an elevated shell (an administrator
+// instance keeps its state apart and marks its windows).
+env.VILAUS_ELEVATED = '0';
 
 const results = [];
 async function step(name, fn) {

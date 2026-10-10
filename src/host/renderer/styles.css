@@ -166,6 +166,17 @@ kbd {
   font-weight: 600;
 }
 
+/* The administrator instance (features/window). */
+.titlebar-admin {
+  align-self: center;
+  padding: 0 6px;
+  border-radius: 2px;
+  background: var(--vscode-activityErrorBadge-background);
+  color: var(--vscode-activityErrorBadge-foreground);
+  font-size: 11px;
+  line-height: 16px;
+}
+
 .titlebar-folder,
 .titlebar-provider {
   display: inline-flex;

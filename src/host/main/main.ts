@@ -12,7 +12,9 @@ import { createAppPaths, pruneOldLogs, type AppPaths } from './appPaths';
 import { registerCcwSchemePrivileges } from './ccwProtocol';
 import { HELP_TEXT, parseCliArgs, userArguments, type CliArgs } from './cli';
 import { locateClaudeExtension } from './extensionLocator';
+import { isElevated } from './elevation';
 import { ExtensionStore } from './extensionStore';
+import { shareSafeStorageKey } from './safeStorageKey';
 import { ShellApp } from './shellApp';
 
 /** What a second start hands to the running instance (Electron's `additionalData`). */
@@ -47,7 +49,7 @@ function main(): void {
   const argv = userArguments(process.argv, app.isPackaged);
   const args = parseCliArgs(argv);
   const dataRoot = args.userDataDir ?? path.join(app.getPath('appData'), 'Vilausity');
-  const paths = createAppPaths(dataRoot);
+  const paths = createAppPaths(dataRoot, new Date(), isElevated());
   if (args.help || args.version) {
     process.stdout.write(args.help ? HELP_TEXT : versionText(args, paths));
     app.exit(0);
@@ -59,11 +61,13 @@ function main(): void {
   // No application menu: it would bring Electron's default accelerators (Ctrl+W, Ctrl+R...).
   Menu.setApplicationMenu(null);
 
-  app.setPath('userData', dataRoot);
+  // The administrator instance's own folder, so that it gets a lock of its own too.
+  app.setPath('userData', paths.instanceRoot);
   app.setPath('sessionData', paths.chromium);
 
   // One instance per data folder (the lock lives in userData): a second start hands its
-  // arguments to the running one and quits, before it writes anything.
+  // arguments to the running one and quits, before it writes anything. The administrator
+  // instance has its own lock: it runs next to the normal one.
   const secondStart: SecondStart = { argv, cwd: process.cwd() };
   if (!app.requestSingleInstanceLock(secondStart)) {
     app.quit();
@@ -74,6 +78,12 @@ function main(): void {
   const sink = new FileLogSink(path.join(paths.sessionLogs, 'main.log'), !app.isPackaged);
   const logger = new Logger(sink, 'main', () => logLevel);
   setUnexpectedErrorHandler((error) => logger.error('unexpected error in listener', error));
+  if (paths.elevated) {
+    logger.info(`administrator instance: its own state and Chromium profile in ${paths.instanceRoot}`);
+  }
+  // Before Chromium reads Local State (which it does once the app gets going): one key for
+  // the API keys of both instances.
+  shareSafeStorageKey(paths.chromium, paths.otherChromium, paths.elevated, logger);
   process.on('uncaughtException', (error) => logger.error('uncaught exception', error));
   process.on('unhandledRejection', (reason) => logger.error('unhandled rejection', reason));
 

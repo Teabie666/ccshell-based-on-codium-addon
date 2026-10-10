@@ -43,7 +43,7 @@ interface PickEntry {
 export const workspaceModule: ShellModule = {
   id: 'workspace',
   dependsOn: ['conversations', 'contentPane'],
-  activate({ services, subscriptions }) {
+  async activate({ services, subscriptions }) {
     const layout = services.get(ILayout);
     const commands = services.get(ICommands);
     const keybindings = services.get(IKeybindings);
@@ -176,6 +176,9 @@ export const workspaceModule: ShellModule = {
         category: CommandCategory.file,
       }),
     );
+    // Not offered in the administrator instance itself.
+    const elevated = (await native.call('app.getInitData', undefined)).elevated;
+    const openAsAdministrator = (): Promise<void> => native.call('window.openFolderAsAdministrator', { folder: current });
     subscriptions.add(
       commands.register(
         'workspace.openRecent',
@@ -184,11 +187,20 @@ export const workspaceModule: ShellModule = {
             { item: { label: t('openFolder') }, run: () => browse(false), alternate: () => browse(true) },
             { item: { label: t('openFolderInNewWindow') }, run: () => browse(true) },
             { item: { label: t('revealFolder') }, run: () => native.call('os.openFolder', { path: current }) },
+            ...(elevated ? [] : [{ item: { label: t('openAsAdministrator') }, run: openAsAdministrator }]),
             ...(await recentEntries(false)),
           ]),
         { title: t('openRecent'), category: CommandCategory.file },
       ),
     );
+    if (!elevated) {
+      subscriptions.add(
+        commands.register('workspace.openAsAdministrator', openAsAdministrator, {
+          title: t('openAsAdministrator'),
+          category: CommandCategory.file,
+        }),
+      );
+    }
     subscriptions.add(
       commands.register(
         'workspace.newWindow',
