@@ -499,8 +499,10 @@ export type MainApiForRenderer = {
   'app.getLanguage': (p: void) => { setting: UiLanguageSetting; running: UiLanguage };
   /** Saves `vilaus.language`; main answers with `languageChanged` if a restart is needed. */
   'app.setLanguage': (p: { setting: UiLanguageSetting }) => void;
-  /** Quits and starts again with the same arguments (open conversations are restored). */
+  /** Quits and starts again with every open window (their conversations are restored). */
   'app.relaunch': (p: void) => void;
+  /** Closes every window; they all open again at the next start. */
+  'app.quit': (p: void) => void;
   'os.openExternal': (p: { url: string }) => boolean;
   /** A system notification; also flashes the taskbar button. Only shown while unfocused. */
   'os.notify': (p: { title: string; body: string }) => void;
@@ -508,7 +510,23 @@ export type MainApiForRenderer = {
   'settings.read': (p: void) => { values: Record<string, unknown>; filePath: string };
   /** Writes one setting to settings.json; `value: undefined` removes it (back to the default). */
   'settings.update': (p: { key: string; value: unknown }) => void;
+  /** Opens a folder in the system's file manager. */
+  'os.openFolder': (p: { path: string }) => void;
   'window.toggleDevTools': (p: void) => void;
+  /** Asks for a folder with the system's folder picker; undefined when cancelled. */
+  'window.pickFolder': (p: void) => string | undefined;
+  /**
+   * Opens a folder in a new window, or (`newWindow: false`) in place of the calling window's
+   * workspace. A folder some window already shows just brings that window to the front.
+   * False when the folder does not exist (it leaves the recent folders).
+   */
+  'window.openFolder': (p: { folder: string; newWindow: boolean }) => boolean;
+  /** Recently opened folders, most recent first. */
+  'window.recentFolders': (p: void) => string[];
+  /** The folders the open windows show (the calling window's too). */
+  'window.shownFolders': (p: void) => string[];
+  /** Closes the calling window; closing the last one quits. */
+  'window.close': (p: void) => void;
   /** The chords main should intercept and send back as `keybinding` events. */
   'window.setKeybindings': (p: { chords: readonly string[] }) => void;
   /** `delta` in zoom steps, or 0 to reset. Returns the new zoom level. */

@@ -166,8 +166,36 @@ kbd {
   font-weight: 600;
 }
 
-.titlebar-workspace {
+.titlebar-folder {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  height: 22px;
+  max-width: 280px;
+  padding: 0 2px 0 6px;
+  border: 1px solid transparent;
+  background: transparent;
   color: var(--vscode-descriptionForeground);
+  cursor: pointer;
+}
+
+.titlebar-folder:hover {
+  background: var(--vscode-toolbar-hoverBackground);
+  color: var(--vscode-titleBar-activeForeground);
+}
+
+.titlebar-folder-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.titlebar-folder-chevron {
+  flex: none;
+  width: 16px;
+  height: 16px;
+  background-color: currentColor;
+  mask: var(--icon-chevron-down) center / 14px no-repeat;
 }
 
 .titlebar-controls-space {

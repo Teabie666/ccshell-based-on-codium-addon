@@ -30,6 +30,7 @@ import {
 } from '../../platform/protocol';
 import { APP_ORIGIN, CCW_SCHEME, WEBVIEW_ID_PREFIX, webviewIdFromUrl } from '../../platform/webviewUrls';
 import { t } from './messages';
+import type { WindowPlacement } from './windowHistory';
 
 /** Keep in sync with --titlebar-height in the renderer stylesheet. */
 export const TITLE_BAR_HEIGHT = 35;
@@ -40,18 +41,17 @@ const ZOOM_STEP = 0.5;
 const ZOOM_MIN = -3;
 const ZOOM_MAX = 5;
 
+/** The zoom level after `delta` steps from `current`; a delta of 0 resets. */
+export function nextZoomLevel(current: number, delta: number): number {
+  return delta === 0 ? 0 : Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, current + delta * ZOOM_STEP));
+}
+
 const ALLOWED_PERMISSIONS = new Set([
   'clipboard-read',
   'clipboard-sanitized-write',
   'notifications',
   'fullscreen',
 ]);
-
-export interface WindowState {
-  readonly bounds?: Rectangle;
-  readonly maximized?: boolean;
-  readonly zoomLevel?: number;
-}
 
 export interface ShellWindowOptions {
   readonly theme: ThemeData;
@@ -60,7 +60,9 @@ export interface ShellWindowOptions {
   readonly openDevTools: boolean;
   /** Place the window on a non-primary display (`--secondary-display`). */
   readonly secondaryDisplay: boolean;
-  readonly state: WindowState;
+  readonly placement: WindowPlacement;
+  /** The zoom level every window shares, applied whenever the page loads. */
+  readonly zoomLevel: () => number;
   readonly openExternal: (url: string) => void;
 }
 
@@ -137,7 +139,7 @@ export class ShellWindow extends Disposable {
   constructor(private readonly options: ShellWindowOptions) {
     super();
     this.theme = options.theme;
-    const saved = visibleBounds(options.state.bounds);
+    const saved = visibleBounds(options.placement.bounds);
     const bounds = options.secondaryDisplay ? (onSecondaryDisplay(saved ?? DEFAULT_SIZE) ?? saved) : saved;
     this.window = new BrowserWindow({
       ...(bounds ?? DEFAULT_SIZE),
@@ -159,7 +161,7 @@ export class ShellWindow extends Disposable {
     });
     this.installGuards();
     this.window.once('ready-to-show', () => {
-      if (options.state.maximized) {
+      if (options.placement.maximized) {
         this.window.maximize();
       }
       this.window.show();
@@ -168,9 +170,7 @@ export class ShellWindow extends Disposable {
       }
     });
     this.window.webContents.on('did-finish-load', () => {
-      if (options.state.zoomLevel) {
-        this.window.webContents.setZoomLevel(options.state.zoomLevel);
-      }
+      this.window.webContents.setZoomLevel(options.zoomLevel());
     });
     this.window.on('focus', () => this.window.flashFrame(false));
     // Auxiliary windows run on the main page's scripts: they cannot outlive it, and their
@@ -188,12 +188,20 @@ export class ShellWindow extends Disposable {
     return this.window.loadURL(`${APP_ORIGIN}/index.html`);
   }
 
-  get state(): WindowState {
+  get placement(): WindowPlacement {
     return {
       bounds: this.window.getNormalBounds(),
       maximized: this.window.isMaximized(),
-      zoomLevel: this.window.webContents.getZoomLevel(),
     };
+  }
+
+  /** Brings the window to the front, restoring it if minimized. */
+  focus(): void {
+    if (this.window.isMinimized()) {
+      this.window.restore();
+    }
+    this.window.show();
+    this.window.focus();
   }
 
   sendExtHostPort(port: MessagePortMain): void {
@@ -227,14 +235,11 @@ export class ShellWindow extends Disposable {
     }
   }
 
-  zoom(delta: number): number {
-    const contents = this.window.webContents;
-    const level = delta === 0 ? 0 : Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, contents.getZoomLevel() + delta * ZOOM_STEP));
-    contents.setZoomLevel(level);
+  setZoomLevel(level: number): void {
+    this.window.webContents.setZoomLevel(level);
     for (const aux of this.auxWindows) {
       aux.webContents.setZoomLevel(level);
     }
-    return level;
   }
 
   /** Only notifies when the window is not focused; the in-app toast covers the focused case. */

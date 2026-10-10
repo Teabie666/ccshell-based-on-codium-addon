@@ -24,9 +24,10 @@ import { ExtHostProcess } from './extHostProcess';
 import { t } from './messages';
 import type { SettingsStore } from './settingsStore';
 import type { ShellEnvironment } from './shellApp';
-import { ShellWindow, type WindowState } from './shellWindow';
+import { ShellWindow } from './shellWindow';
 import { StateStore } from './stateStore';
 import type { WebviewDocumentStore } from './webviewDocuments';
+import type { WindowPlacement } from './windowHistory';
 
 /** What a window needs from the application. */
 export interface WindowHost {
@@ -41,6 +42,8 @@ export interface WindowHost {
   readonly extension: LocatedExtension;
   appInfo(): AppInfo;
   openExternal(url: string): Promise<boolean>;
+  /** The zoom level all windows share. */
+  readonly zoomLevel: number;
   /** This window's extension host changed a global state value; the other windows' hosts need it too. */
   globalStateChanged(source: WindowContext, key: string, value: unknown): void;
   /** The user closed the window (its close button, Alt+F4). */
@@ -51,19 +54,19 @@ export interface WindowOptions {
   /** 1, 2, ... in the order windows open during this run; names the window's log folder. */
   readonly id: number;
   readonly folder: string;
-  readonly state: WindowState;
+  readonly placement: WindowPlacement;
 }
 
 export class WindowContext extends Disposable {
   readonly id: number;
-  readonly folders: readonly string[];
-  readonly workspaceKey: string;
-  readonly workspaceState: StateStore;
   readonly window: ShellWindow;
   private readonly logger: ILogger;
   private readonly logsDir: string;
   /** Marks this window's webview documents in the shared store. */
   private readonly documentOwner: string;
+  private currentFolders: readonly string[] = [];
+  private currentWorkspaceKey = '';
+  private currentWorkspaceState: StateStore | undefined;
   private extHost: ExtHostProcess | undefined;
   private shutdownPromise: Promise<void> | undefined;
 
@@ -77,12 +80,7 @@ export class WindowContext extends Disposable {
     this.documentOwner = `window${options.id}`;
     this.logger = env.logger.child(`window${options.id}`);
     this.logsDir = env.paths.windowLogs(options.id);
-    this.folders = [options.folder];
-    this.workspaceKey = workspaceKey(this.folders);
-    this.workspaceState = new StateStore(
-      env.paths.workspaceStateFile(this.workspaceKey),
-      this.logger.child('state'),
-    );
+    this.setWorkspace(options.folder);
     this.window = this.register(
       new ShellWindow({
         theme: host.theme,
@@ -90,7 +88,8 @@ export class WindowContext extends Disposable {
         logger: this.logger,
         openDevTools: env.args.devtools,
         secondaryDisplay: env.args.secondaryDisplay,
-        state: options.state,
+        placement: options.placement,
+        zoomLevel: () => host.zoomLevel,
         openExternal: (url) => void host.openExternal(url),
       }),
     );
@@ -114,8 +113,46 @@ export class WindowContext extends Disposable {
     return this.window.window.webContents;
   }
 
+  get folders(): readonly string[] {
+    return this.currentFolders;
+  }
+
+  /** The workspace folder (a window has exactly one). */
+  get folder(): string {
+    return this.currentFolders[0] ?? '';
+  }
+
+  get workspaceKey(): string {
+    return this.currentWorkspaceKey;
+  }
+
+  get workspaceState(): StateStore {
+    if (!this.currentWorkspaceState) {
+      throw new Error('the window has no workspace');
+    }
+    return this.currentWorkspaceState;
+  }
+
   load(): Promise<void> {
     return this.window.load();
+  }
+
+  focus(): void {
+    this.window.focus();
+  }
+
+  /**
+   * Shows another folder in this window, the way VS Code reloads a window for a new
+   * workspace: the extension host stops (the extension records the open conversations
+   * under the old folder, so they come back with it), and the page reloads for the new
+   * folder, which starts a new extension host.
+   */
+  async switchFolder(folder: string): Promise<void> {
+    this.logger.info(`switching the workspace to ${folder}`);
+    await this.stopExtHost();
+    await this.workspaceState.flush();
+    this.setWorkspace(folder);
+    this.webContents.reload();
   }
 
   emit<K extends keyof MainEventsForRenderer>(name: K, payload: MainEventsForRenderer[K]): void {
@@ -159,8 +196,7 @@ export class WindowContext extends Disposable {
    */
   shutdown(): Promise<void> {
     this.shutdownPromise ??= (async () => {
-      await this.extHost?.shutdown();
-      this.host.documents.releaseOwner(this.documentOwner);
+      await this.stopExtHost();
       await this.workspaceState.flush();
     })();
     return this.shutdownPromise;
@@ -176,7 +212,26 @@ export class WindowContext extends Disposable {
 
   /** Synchronous last-chance persistence for abrupt exits. */
   flushSync(): void {
-    this.workspaceState.flushSync();
+    this.currentWorkspaceState?.flushSync();
+  }
+
+  private setWorkspace(folder: string): void {
+    this.currentFolders = [folder];
+    this.currentWorkspaceKey = workspaceKey(this.currentFolders);
+    this.currentWorkspaceState = new StateStore(
+      this.host.env.paths.workspaceStateFile(this.currentWorkspaceKey),
+      this.logger.child('state'),
+    );
+  }
+
+  private async stopExtHost(): Promise<void> {
+    const previous = this.extHost;
+    this.extHost = undefined;
+    if (previous) {
+      await previous.shutdown();
+      previous.dispose();
+    }
+    this.host.documents.releaseOwner(this.documentOwner);
   }
 
   private async startExtHost(): Promise<void> {
@@ -186,11 +241,7 @@ export class WindowContext extends Disposable {
     if (this.extHost) {
       // The page reloaded (or the host crashed): its webviews are gone, so start from a clean host.
       this.logger.info('restarting extension host');
-      const previous = this.extHost;
-      this.extHost = undefined;
-      await previous.shutdown();
-      previous.dispose();
-      this.host.documents.releaseOwner(this.documentOwner);
+      await this.stopExtHost();
     }
     const extHost = await ExtHostProcess.start(
       path.join(this.host.env.appDir, 'exthost.js'),

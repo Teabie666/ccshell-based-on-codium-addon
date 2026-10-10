@@ -38,11 +38,19 @@ import type { CliArgs } from './cli';
 import { locateClaudeExtension, type LocatedExtension } from './extensionLocator';
 import { t } from './messages';
 import { SettingsStore } from './settingsStore';
-import { isExternalUrl, type WindowState } from './shellWindow';
+import { isExternalUrl, nextZoomLevel } from './shellWindow';
 import { StateStore } from './stateStore';
 import { DEFAULT_THEME_ID, listThemeSummaries, loadTheme, withFontVariables } from './themes';
 import { WebviewDocumentStore } from './webviewDocuments';
 import { WindowContext, type WindowHost } from './windowContext';
+import {
+  cascade,
+  foldersToOpen,
+  parsePlacement,
+  sameFolder,
+  WindowHistory,
+  type WindowPlacement,
+} from './windowHistory';
 
 /** The VS Code version we report to the extension. It gates features on this number. */
 export const VSCODE_COMPAT_VERSION = '1.121.0';
@@ -57,7 +65,8 @@ const THEME_SETTING_KEYS = new Set([
   'editor.fontSize',
   'editor.fontWeight',
 ]);
-const WINDOW_STATE_KEY = 'vilaus.window';
+/** Where the one window's placement and zoom were kept before there were several windows. */
+const LEGACY_WINDOW_STATE_KEY = 'vilaus.window';
 
 export interface ShellEnvironment {
   readonly args: CliArgs;
@@ -84,10 +93,15 @@ export class ShellApp extends Disposable implements WindowHost {
   /** The display language of this run; a different setting applies after a restart. */
   readonly language: UiLanguage;
   readonly extensionTable: ExtensionTranslations | undefined;
+  private readonly shellState: StateStore;
+  private readonly history: WindowHistory;
   private readonly themesDir: string;
   private currentTheme: ThemeData;
+  private currentZoom: number;
+  /** The old single window's placement, for the first window until each folder has its own. */
+  private readonly legacyPlacement: WindowPlacement | undefined;
   private located: LocatedExtension | undefined;
-  /** Open windows, in the order they opened. */
+  /** Open windows; the most recently focused one last. */
   private readonly windows: WindowContext[] = [];
   private nextWindowId = 1;
   private quitting = false;
@@ -101,6 +115,17 @@ export class ShellApp extends Disposable implements WindowHost {
     setUiLanguage(this.language, languagePack(this.language));
     this.logger.info(`display language: ${this.language}`);
     this.globalState = new StateStore(env.paths.globalStateFile, this.logger.child('state'));
+    this.shellState = new StateStore(env.paths.shellStateFile, this.logger.child('state'));
+    this.history = new WindowHistory(this.shellState);
+    const legacy = this.globalState.get(LEGACY_WINDOW_STATE_KEY) as { zoomLevel?: unknown } | undefined;
+    this.legacyPlacement = parsePlacement(legacy);
+    if (legacy !== undefined) {
+      if (this.history.zoomLevel() === undefined && typeof legacy.zoomLevel === 'number') {
+        this.history.setZoomLevel(legacy.zoomLevel);
+      }
+      this.globalState.set(LEGACY_WINDOW_STATE_KEY, undefined);
+    }
+    this.currentZoom = this.history.zoomLevel() ?? 0;
     this.themesDir = path.join(env.appDir, 'themes');
     const themeId = env.args.theme ?? stringSetting(this.settings.all[THEME_SETTING]) ?? DEFAULT_THEME_ID;
     this.currentTheme = withFontVariables(loadTheme(this.themesDir, themeId, this.logger), this.settings.all);
@@ -111,6 +136,10 @@ export class ShellApp extends Disposable implements WindowHost {
 
   get theme(): ThemeData {
     return this.currentTheme;
+  }
+
+  get zoomLevel(): number {
+    return this.currentZoom;
   }
 
   get extension(): LocatedExtension {
@@ -138,38 +167,91 @@ export class ShellApp extends Disposable implements WindowHost {
     this.registerRendererHandlers();
     this.settings.watch();
     this.register(this.settings.onDidChange(({ keys }) => this.settingsChanged(keys)));
-    await this.openWindow(resolveWorkspaceFolder(this.env.args.folder, this.logger));
+    // A quit from elsewhere (app.quit()) would close the windows one by one, and only the
+    // last would be restored; quit the way the Exit command does instead.
+    const onBeforeQuit = (event: Electron.Event): void => {
+      if (!this.quitting) {
+        event.preventDefault();
+        void this.quit();
+      }
+    };
+    app.on('before-quit', onBeforeQuit);
+    this.register(toDisposable(() => app.off('before-quit', onBeforeQuit)));
+    const folders = foldersToOpen({
+      folder: this.env.args.folder ? resolveWorkspaceFolder(this.env.args.folder, this.logger) : undefined,
+      restoreAll: this.history.takeRestoreAll(),
+      previous: this.history.openWindows(),
+      exists: isDirectory,
+      fallback: os.homedir(),
+    });
+    for (const folder of folders) {
+      await this.openWindow(folder);
+    }
+  }
+
+  /** Opens `folder` in a window of its own, or brings the window that shows it to the front. */
+  async openWindow(folder: string): Promise<WindowContext> {
+    const existing = this.windowFor(folder);
+    if (existing) {
+      existing.focus();
+      return existing;
+    }
+    const window = new WindowContext(this, {
+      id: this.nextWindowId++,
+      folder,
+      placement: this.placementFor(folder),
+    });
+    this.windows.push(window);
+    window.browserWindow.on('focus', () => this.markActive(window));
+    this.history.addRecent(folder);
+    this.rememberOpenWindows();
+    this.logger.info(`window ${window.id}: ${folder}`);
+    await window.load();
+    return window;
   }
 
   requestClose(window: WindowContext): void {
+    if (this.quitting) {
+      return;
+    }
     if (this.windows.length <= 1) {
+      // The last window: it is the one to restore at the next start.
       void this.quit();
     } else {
       void this.closeWindow(window);
     }
   }
 
+  /** Closes every window; all of them open again at the next start. */
   async quit(): Promise<void> {
     if (this.quitting) {
       return;
     }
     this.quitting = true;
     this.logger.info('shutting down');
-    const last = this.windows.at(-1);
-    if (last) {
-      this.globalState.set(WINDOW_STATE_KEY, last.window.state);
+    for (const window of this.windows) {
+      this.history.rememberPlacement(window.folder, window.window.placement);
     }
+    this.rememberOpenWindows();
     await Promise.all(this.windows.map((window) => window.shutdown()));
-    await this.globalState.flush();
+    await Promise.all([this.globalState.flush(), this.shellState.flush()]);
     for (const window of this.windows.splice(0)) {
       window.destroy();
     }
     app.quit();
   }
 
+  /** Quits and starts again with every window that is open now, whatever the command line says. */
+  relaunch(): void {
+    this.history.setRestoreAll(true);
+    app.relaunch();
+    void this.quit();
+  }
+
   /** Synchronous last-chance persistence for abrupt exits. */
   flushSync(): void {
     this.globalState.flushSync();
+    this.shellState.flushSync();
     for (const window of this.windows) {
       window.flushSync();
     }
@@ -210,25 +292,72 @@ export class ShellApp extends Disposable implements WindowHost {
     return true;
   }
 
-  private async openWindow(folder: string): Promise<WindowContext> {
-    const window = new WindowContext(this, {
-      id: this.nextWindowId++,
-      folder,
-      state: (this.globalState.get(WINDOW_STATE_KEY) as WindowState | undefined) ?? {},
-    });
-    this.windows.push(window);
-    this.logger.info(`window ${window.id}: ${window.folders.join(', ')}`);
-    await window.load();
-    return window;
+  /**
+   * Opens a folder in a new window, or in place of `inWindow`'s workspace. A folder that
+   * some window shows already just brings that window to the front.
+   */
+  private async openFolder(folder: string, inWindow: WindowContext | undefined): Promise<boolean> {
+    if (!isDirectory(folder)) {
+      this.logger.warn(`cannot open ${folder}: not a folder`);
+      this.history.removeRecent(folder);
+      return false;
+    }
+    const existing = this.windowFor(folder);
+    if (existing) {
+      existing.focus();
+    } else if (!inWindow) {
+      await this.openWindow(folder);
+    } else {
+      this.history.rememberPlacement(inWindow.folder, inWindow.window.placement);
+      await inWindow.switchFolder(folder);
+      this.history.addRecent(folder);
+      this.rememberOpenWindows();
+    }
+    return true;
   }
 
   private async closeWindow(window: WindowContext): Promise<void> {
-    await window.shutdown();
+    this.history.rememberPlacement(window.folder, window.window.placement);
     const index = this.windows.indexOf(window);
     if (index >= 0) {
       this.windows.splice(index, 1);
     }
+    this.rememberOpenWindows();
+    await window.shutdown();
     window.destroy();
+  }
+
+  private windowFor(folder: string): WindowContext | undefined {
+    return this.windows.find((window) => sameFolder(window.folder, folder));
+  }
+
+  /** Keeps the most recently focused window last. */
+  private markActive(window: WindowContext): void {
+    const index = this.windows.indexOf(window);
+    if (index >= 0 && index !== this.windows.length - 1) {
+      this.windows.splice(index, 1);
+      this.windows.push(window);
+      this.rememberOpenWindows();
+    }
+  }
+
+  /** Kept current, so even after a crash the next start reopens what was open. */
+  private rememberOpenWindows(): void {
+    this.history.setOpenWindows(this.windows.map((window) => window.folder));
+  }
+
+  /** Where a new window for `folder` goes: where it was last time, else a step off the active window. */
+  private placementFor(folder: string): WindowPlacement {
+    const taken = this.windows.flatMap((window) => window.window.placement.bounds ?? []);
+    const saved = this.history.placement(folder) ?? (this.windows.length === 0 ? this.legacyPlacement : undefined);
+    if (saved?.bounds) {
+      return { ...saved, bounds: cascade(saved.bounds, taken) };
+    }
+    const active = this.windows.at(-1)?.window.placement;
+    if (active?.bounds) {
+      return { bounds: cascade(active.bounds, taken), maximized: active.maximized };
+    }
+    return saved ?? {};
   }
 
   private broadcast<K extends keyof MainEventsForRenderer>(name: K, payload: MainEventsForRenderer[K]): void {
@@ -297,17 +426,40 @@ export class ShellApp extends Disposable implements WindowHost {
         // `auto` is the default, so it is stored by removing the key.
         return this.settings.set(LANGUAGE_SETTING, parsed === 'auto' ? undefined : parsed);
       },
-      'app.relaunch': () => {
-        app.relaunch();
-        void this.quit();
-      },
+      'app.relaunch': () => this.relaunch(),
+      'app.quit': () => void this.quit(),
       'os.openExternal': ({ url }) => this.openExternal(url),
       'os.notify': ({ title, body }, window) => window.window.notify(title, body),
+      'os.openFolder': async ({ path: folder }) => {
+        const error = await shell.openPath(folder);
+        if (error) {
+          this.logger.warn(`cannot open ${folder} in the file manager: ${error}`);
+        }
+      },
       'settings.read': () => ({ values: { ...this.settings.all }, filePath: this.settings.filePath }),
       'settings.update': ({ key, value }) => this.settings.set(key, value),
       'window.toggleDevTools': (_params, window) => window.webContents.toggleDevTools(),
+      'window.pickFolder': async (_params, window) => {
+        const result = await dialog.showOpenDialog(window.browserWindow, {
+          properties: ['openDirectory'],
+          defaultPath: path.dirname(window.folder),
+        });
+        return result.canceled ? undefined : result.filePaths[0];
+      },
+      'window.openFolder': ({ folder, newWindow }, window) => this.openFolder(folder, newWindow ? undefined : window),
+      'window.recentFolders': () => this.history.recentFolders(),
+      'window.shownFolders': () => this.windows.map((window) => window.folder),
+      'window.close': (_params, window) => this.requestClose(window),
       'window.setKeybindings': ({ chords }, window) => window.window.setInterceptedChords(chords),
-      'window.zoom': ({ delta }, window) => window.window.zoom(delta),
+      'window.zoom': ({ delta }) => {
+        // One level for all windows: Chromium zooms pages of the same origin together anyway.
+        this.currentZoom = nextZoomLevel(this.currentZoom, delta);
+        this.history.setZoomLevel(this.currentZoom);
+        for (const window of this.windows) {
+          window.window.setZoomLevel(this.currentZoom);
+        }
+        return this.currentZoom;
+      },
       'window.setWebviewMenu': ({ webviewId, groups }, window) => window.window.setWebviewMenu(webviewId, groups),
     };
     ipcMain.handle(IpcChannel.Rpc, async (event, method: unknown, params: unknown) => {
@@ -361,6 +513,14 @@ function resolveWorkspaceFolder(folder: string | undefined, logger: ILogger): st
     logger.warn(`workspace folder ${folder} does not exist; using the home directory`);
   }
   return os.homedir();
+}
+
+function isDirectory(folder: string): boolean {
+  try {
+    return fs.statSync(folder).isDirectory();
+  } catch {
+    return false;
+  }
 }
 
 function stringSetting(value: unknown): string | undefined {

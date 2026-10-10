@@ -59,24 +59,39 @@ async function waitFor(predicate, timeout, what) {
 const tabCount = () => page.locator('#tabs .tab').count();
 const webviewFrames = () => page.frames().filter((f) => f.url().startsWith('ccw://wv'));
 
+/** A shell window's title ends in `<folder name> - Vilausity` (the active conversation's title comes first). */
+const windowTitle = (folder) => `${path.basename(folder)} - Vilausity`;
+const showsFolder = (title, folder) => title === windowTitle(folder) || title.endsWith(` - ${windowTitle(folder)}`);
+
 /**
  * Presses a shortcut through Electron's input pipeline (webContents.sendInputEvent), the
  * same path real keyboard input takes. Playwright's keyboard goes through the DevTools
  * protocol, which bypasses main's before-input-event and so our intercepted shortcuts.
+ * `target`: 'main' (the test workspace's window), 'aux' (a tab's own window), or a folder
+ * whose window gets the keys.
  */
 async function press(shortcut, target = 'main') {
   const parts = shortcut.split('+');
   const keyCode = parts.pop();
   const modifiers = parts.map((m) => m.toLowerCase());
-  await app.evaluate(({ BrowserWindow }, { keyCode, modifiers, target }) => {
-    // The main window shows ccw://app; a tab's own window is a blank page it fills.
+  const title = target === 'aux' ? undefined : windowTitle(target === 'main' ? workspace : target);
+  await app.evaluate(({ BrowserWindow }, { keyCode, modifiers, title }) => {
+    // Shell windows show ccw://app; a tab's own window is a blank page the shell fills.
     const window = BrowserWindow.getAllWindows().find((w) =>
-      target === 'main' ? w.webContents.getURL().startsWith('ccw://app/') : w.webContents.getURL() === 'about:blank',
+      title
+        ? w.webContents.getURL().startsWith('ccw://app/') && (w.getTitle() === title || w.getTitle().endsWith(` - ${title}`))
+        : w.webContents.getURL() === 'about:blank',
     );
     window.webContents.sendInputEvent({ type: 'keyDown', keyCode, modifiers });
     window.webContents.sendInputEvent({ type: 'keyUp', keyCode, modifiers });
-  }, { keyCode, modifiers, target });
+  }, { keyCode, modifiers, title });
 }
+
+/** The shell windows' pages (not tabs' own windows). */
+const shellPages = () => app.windows().filter((candidate) => candidate.url().startsWith('ccw://app/'));
+/** What the folder button and the Open Folder commands end up calling. */
+const openFolder = (from, folder, newWindow) =>
+  from.evaluate((params) => window.vilausNative.invoke('window.openFolder', params), { folder, newWindow });
 
 await step('chat panel and session list load', async () => {
   await waitFor(async () => (await tabCount()) === 1, 30_000, 'the first conversation tab');
@@ -127,12 +142,12 @@ await step('command palette switches the color theme for shell and webviews', as
 });
 
 await step('Ctrl+F finds text in the active conversation', async () => {
-  // A just-opened conversation renders its welcome content a moment later.
+  // A just-opened conversation renders its welcome content a moment later (the session list
+  // may show the word first, so look in the active conversation).
   await waitFor(async () => {
-    for (const frame of webviewFrames()) {
-      if (await frame.evaluate(() => document.body.innerText.includes('Claude'))) return true;
-    }
-    return false;
+    const handle = await page.locator('#main .panel:not([hidden]) .webview-frame').elementHandle();
+    const frame = await handle?.contentFrame();
+    return frame ? frame.evaluate(() => document.body.innerText.includes('Claude')).catch(() => false) : false;
   }, 10_000, 'conversation content');
   await press('Control+F');
   const input = page.locator('.find-input');
@@ -744,6 +759,84 @@ await step('settings.json reaches every Monaco option; Default Settings (JSON) l
   return 'ruler shown; editor.rulers found in the defaults; moved to a window and back';
 });
 
+// ---- M4: windows ----------------------------------------------------------------------------
+
+const second = path.join(runDir, 'second');
+const third = path.join(runDir, 'third');
+mkdirSync(second, { recursive: true });
+mkdirSync(third, { recursive: true });
+let secondPage;
+
+await step('a folder opens in a window of its own; opening it again brings that window forward', async () => {
+  const opened = app.waitForEvent('window');
+  await openFolder(page, second, true);
+  secondPage = await opened;
+  await waitFor(async () => showsFolder(await secondPage.title(), second), 30_000, 'the new window');
+  await waitFor(
+    () => secondPage.frames().filter((f) => f.url().startsWith('ccw://wv')).length >= 2,
+    30_000,
+    "the new window's conversation and session list",
+  );
+  await openFolder(page, second, true);
+  await page.waitForTimeout(1000);
+  if (shellPages().length !== 2) throw new Error(`${shellPages().length} windows`);
+  const button = await secondPage.locator('.titlebar-folder-label').innerText();
+  if (button !== 'second') throw new Error(`the folder button says ${button}`);
+  return `${shellPages().length} windows`;
+});
+
+await step("Ctrl+R opens a recent folder in place of this window's; its conversations come back with it", async () => {
+  // The third folder joins the recent folders: opened in a window that Ctrl+Shift+W closes.
+  const opened = app.waitForEvent('window');
+  await openFolder(page, third, true);
+  const thirdPage = await opened;
+  await waitFor(async () => showsFolder(await thirdPage.title(), third), 30_000, 'the third window');
+  const closed = thirdPage.waitForEvent('close');
+  await press('Control+Shift+W', third);
+  await closed;
+
+  const tabs = () => secondPage.locator('#tabs .tab').count();
+  await press('Control+N', second);
+  await waitFor(async () => (await tabs()) === 2, 20_000, 'two conversations in the second window');
+  // Let the panels save their state (PanelRestore debounces writes).
+  await secondPage.waitForTimeout(1500);
+
+  const openRecent = async (from, name) => {
+    await press('Control+R', from);
+    const filter = secondPage.locator('.quick-input-filter');
+    await filter.waitFor({ timeout: 5000 });
+    const labels = await secondPage.locator('.quick-input-item .quick-input-label').allInnerTexts();
+    await filter.fill(name);
+    await filter.press('Enter');
+    await secondPage.locator('.modal .button', { hasText: /^Open$/ }).click();
+    return labels;
+  };
+  const labels = await openRecent(second, 'third');
+  for (const expected of ['Open Folder...', 'third', path.basename(workspace)]) {
+    if (!labels.includes(expected)) throw new Error(`the list was ${labels.join(' | ')}`);
+  }
+  await waitFor(async () => showsFolder(await secondPage.title(), third), 30_000, 'the window to show the third folder');
+  await waitFor(async () => (await tabs()) === 1, 30_000, "the third folder's own conversation");
+
+  await openRecent(third, 'second');
+  await waitFor(async () => showsFolder(await secondPage.title(), second), 30_000, 'the second folder again');
+  await waitFor(async () => (await tabs()) === 2, 30_000, 'its two conversations to come back');
+  return labels.join(' | ');
+});
+
+await step('Ctrl+Shift+W closes a window; the others stay', async () => {
+  const closed = secondPage.waitForEvent('close');
+  await press('Control+Shift+W', second);
+  await closed;
+  await page.waitForTimeout(500);
+  if (shellPages().length !== 1) throw new Error(`${shellPages().length} windows`);
+  // The test workspace's window still works.
+  await press('Control+B');
+  await waitFor(() => page.locator('#sidebar').isHidden(), 5000, 'the sidebar to hide');
+  await press('Control+B');
+  await waitFor(() => page.locator('#sidebar').isVisible(), 5000, 'the sidebar to show');
+});
+
 await page.screenshot({ path: path.join(runDir, 'final.png') });
 
 await step('open conversations are restored after a restart', async () => {
@@ -878,6 +971,28 @@ await step("in Chinese the extension's UI is Chinese too; its content and aria-l
   }
   if (!cjk.test(rename)) throw new Error(`the rename answered in English: ${rename}`);
   return `placeholder "${placeholder}"; rename: ${rename}`;
+});
+
+await step('started without a folder, the windows open at quit come back', async () => {
+  const opened = app.waitForEvent('window');
+  await openFolder(page, second, true);
+  const newPage = await opened;
+  await waitFor(async () => showsFolder(await newPage.title(), second), 30_000, 'the second window');
+  await app.close();
+  app = await electron.launch({
+    executablePath: electronPath,
+    args: ['.', '--user-data-dir', dataDir, '--secondary-display'],
+    cwd: root,
+    env,
+    timeout: 60_000,
+  });
+  page = await app.firstWindow();
+  const titles = await waitFor(async () => {
+    const shown = await Promise.all(shellPages().map((candidate) => candidate.title()));
+    const both = [second, workspace].every((folder) => shown.some((title) => showsFolder(title, folder)));
+    return shown.length === 2 && both ? shown : undefined;
+  }, 30_000, 'the two windows');
+  return titles.join(', ');
 });
 
 await app.close();

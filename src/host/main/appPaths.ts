@@ -10,6 +10,8 @@ export interface AppPaths {
   readonly root: string;
   readonly settingsFile: string;
   readonly globalStateFile: string;
+  /** What main itself remembers (windows, recent folders), apart from the extension's state. */
+  readonly shellStateFile: string;
   /** Chromium's own profile data (cache, local storage), kept apart from ours. */
   readonly chromium: string;
   readonly logsRoot: string;
@@ -35,6 +37,7 @@ export function createAppPaths(root: string, startedAt = new Date()): AppPaths {
     root,
     settingsFile: path.join(root, 'settings.json'),
     globalStateFile: path.join(root, 'state', 'global.json'),
+    shellStateFile: path.join(root, 'state', 'shell.json'),
     chromium: path.join(root, 'chromium'),
     logsRoot,
     sessionLogs,

@@ -1,0 +1,189 @@
+/**
+ * What main remembers about windows between runs (state/shell.json, apart from the
+ * extension's global state): where each folder's window was, the recently opened folders,
+ * which windows were open (to restore them), and the zoom level all windows share.
+ * No Electron here, so it can be unit tested.
+ */
+
+import { normalizeForCompare } from '../node/paths';
+
+export interface Bounds {
+  readonly x: number;
+  readonly y: number;
+  readonly width: number;
+  readonly height: number;
+}
+
+export interface WindowPlacement {
+  readonly bounds?: Bounds;
+  readonly maximized?: boolean;
+}
+
+interface SavedPlacement extends WindowPlacement {
+  readonly folder: string;
+  /** Milliseconds since the epoch; the oldest entries go first when there are too many. */
+  readonly lastUsed: number;
+}
+
+export interface KeyValueStore {
+  get(key: string): unknown;
+  set(key: string, value: unknown): void;
+}
+
+const PLACEMENTS_KEY = 'windowPlacements';
+const RECENT_KEY = 'recentFolders';
+const OPEN_KEY = 'openWindows';
+const RESTORE_ALL_KEY = 'restoreAllWindows';
+const ZOOM_KEY = 'zoomLevel';
+
+const MAX_PLACEMENTS = 50;
+const MAX_RECENT = 20;
+/** How far a new window sits from the one it would otherwise cover exactly. */
+export const CASCADE_OFFSET = 30;
+
+export function sameFolder(a: string, b: string): boolean {
+  return normalizeForCompare(a) === normalizeForCompare(b);
+}
+
+export class WindowHistory {
+  constructor(private readonly store: KeyValueStore) {}
+
+  placement(folder: string): WindowPlacement | undefined {
+    const saved = this.placements()[normalizeForCompare(folder)];
+    return saved ? { bounds: saved.bounds, maximized: saved.maximized } : undefined;
+  }
+
+  rememberPlacement(folder: string, placement: WindowPlacement, now = Date.now()): void {
+    const placements = { ...this.placements() };
+    placements[normalizeForCompare(folder)] = { folder, ...placement, lastUsed: now };
+    const kept = Object.entries(placements)
+      .sort(([, a], [, b]) => b.lastUsed - a.lastUsed)
+      .slice(0, MAX_PLACEMENTS);
+    this.store.set(PLACEMENTS_KEY, Object.fromEntries(kept));
+  }
+
+  /** Most recent first. */
+  recentFolders(): string[] {
+    return stringList(this.store.get(RECENT_KEY));
+  }
+
+  addRecent(folder: string): void {
+    const rest = this.recentFolders().filter((candidate) => !sameFolder(candidate, folder));
+    this.store.set(RECENT_KEY, [folder, ...rest].slice(0, MAX_RECENT));
+  }
+
+  removeRecent(folder: string): void {
+    this.store.set(
+      RECENT_KEY,
+      this.recentFolders().filter((candidate) => !sameFolder(candidate, folder)),
+    );
+  }
+
+  /** The windows to open at the next start, the last one in front. */
+  openWindows(): string[] {
+    return stringList(this.store.get(OPEN_KEY));
+  }
+
+  setOpenWindows(folders: readonly string[]): void {
+    this.store.set(OPEN_KEY, [...folders]);
+  }
+
+  /** Makes the next start restore every open window whatever its command line says (a relaunch). */
+  setRestoreAll(restoreAll: boolean): void {
+    this.store.set(RESTORE_ALL_KEY, restoreAll ? true : undefined);
+  }
+
+  /** Reads the restore-all mark and clears it: it applies to one start only. */
+  takeRestoreAll(): boolean {
+    const restoreAll = this.store.get(RESTORE_ALL_KEY) === true;
+    this.store.set(RESTORE_ALL_KEY, undefined);
+    return restoreAll;
+  }
+
+  zoomLevel(): number | undefined {
+    const zoom = this.store.get(ZOOM_KEY);
+    return typeof zoom === 'number' && Number.isFinite(zoom) ? zoom : undefined;
+  }
+
+  setZoomLevel(level: number): void {
+    this.store.set(ZOOM_KEY, level === 0 ? undefined : level);
+  }
+
+  private placements(): Record<string, SavedPlacement> {
+    const raw = this.store.get(PLACEMENTS_KEY);
+    if (!isRecord(raw)) {
+      return {};
+    }
+    const placements: Record<string, SavedPlacement> = {};
+    for (const [key, value] of Object.entries(raw)) {
+      if (isRecord(value) && typeof value.folder === 'string' && typeof value.lastUsed === 'number') {
+        placements[key] = {
+          folder: value.folder,
+          lastUsed: value.lastUsed,
+          bounds: isBounds(value.bounds) ? value.bounds : undefined,
+          maximized: value.maximized === true,
+        };
+      }
+    }
+    return placements;
+  }
+}
+
+/**
+ * The folders to open at startup, in order (the last one ends up in front): every window
+ * that was open after a relaunch; else the folder on the command line; else the windows
+ * that were open last time; else `fallback`.
+ */
+export function foldersToOpen(options: {
+  readonly folder: string | undefined;
+  readonly restoreAll: boolean;
+  readonly previous: readonly string[];
+  readonly exists: (folder: string) => boolean;
+  readonly fallback: string;
+}): string[] {
+  const previous: string[] = [];
+  for (const folder of options.previous) {
+    if (options.exists(folder) && !previous.some((kept) => sameFolder(kept, folder))) {
+      previous.push(folder);
+    }
+  }
+  if (options.restoreAll && previous.length > 0) {
+    return previous;
+  }
+  if (options.folder) {
+    return [options.folder];
+  }
+  return previous.length > 0 ? previous : [options.fallback];
+}
+
+/** Moves `bounds` down and right while another window sits exactly there. */
+export function cascade(bounds: Bounds, taken: readonly Bounds[]): Bounds {
+  let next = bounds;
+  for (let i = 0; i < 10 && taken.some((other) => other.x === next.x && other.y === next.y); i++) {
+    next = { ...next, x: next.x + CASCADE_OFFSET, y: next.y + CASCADE_OFFSET };
+  }
+  return next;
+}
+
+/** A placement as an older version stored it (bounds, maximized), if it is one. */
+export function parsePlacement(value: unknown): WindowPlacement | undefined {
+  if (!isRecord(value)) {
+    return undefined;
+  }
+  return { bounds: isBounds(value.bounds) ? value.bounds : undefined, maximized: value.maximized === true };
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function isBounds(value: unknown): value is Bounds {
+  return (
+    isRecord(value) &&
+    ['x', 'y', 'width', 'height'].every((key) => typeof value[key] === 'number' && Number.isFinite(value[key]))
+  );
+}
+
+function stringList(value: unknown): string[] {
+  return Array.isArray(value) ? value.filter((item): item is string => typeof item === 'string' && item.length > 0) : [];
+}

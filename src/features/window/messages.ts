@@ -3,6 +3,8 @@
 import { defineMessages } from '../../platform/nls';
 
 export const t = defineMessages('window', {
+  closeWindow: 'Close Window',
+  quit: 'Exit',
   zoomIn: 'Zoom In',
   zoomOut: 'Zoom Out',
   resetZoom: 'Reset Zoom',

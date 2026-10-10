@@ -22,6 +22,11 @@ export interface QuickPickOptions {
   readonly score?: (item: QuickPickItemDto, query: string) => number | undefined;
   /** Renders at most this many items. */
   readonly limit?: number;
+  /**
+   * The item's other action (Ctrl+Enter, Ctrl+click), e.g. "open in a new window". The
+   * picker then closes with no selection.
+   */
+  readonly alternate?: (index: number) => void;
 }
 
 export class Dialogs {
@@ -117,16 +122,21 @@ export class Dialogs {
             row.addEventListener('mousedown', (event) => {
               event.preventDefault();
               cursor = position;
-              choose();
+              choose(event.ctrlKey);
             });
             return row;
           }),
         );
       };
 
-      const choose = (): void => {
+      const choose = (alternate = false): void => {
         const index = visible[cursor];
         if (index === undefined || request.items[index]?.separator) {
+          return;
+        }
+        if (alternate && options.alternate && !request.canPickMany) {
+          finish(undefined);
+          options.alternate(index);
           return;
         }
         if (request.canPickMany) {
@@ -159,7 +169,7 @@ export class Dialogs {
           if (request.canPickMany) {
             finish([...picked].sort((a, b) => a - b));
           } else {
-            choose();
+            choose(event.ctrlKey);
           }
         }
       });

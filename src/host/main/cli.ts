@@ -18,9 +18,20 @@ export interface CliArgs {
 }
 
 /**
- * `argv` is everything after the executable (and after the app path in development),
- * so callers pass `process.argv.slice(app.isPackaged ? 1 : 2)`.
+ * The user's arguments in `process.argv`: everything after the executable, and in
+ * development (`electron [switches] <app path> [args]`) everything after the app path.
+ * Switches can come before the app path (Playwright puts `--inspect=0` there).
  */
+export function userArguments(argv: readonly string[], packaged: boolean): string[] {
+  const rest = argv.slice(1);
+  if (packaged) {
+    return rest;
+  }
+  const appPath = rest.findIndex((arg) => !arg.startsWith('-'));
+  return appPath < 0 ? [] : rest.slice(appPath + 1);
+}
+
+/** `argv`: the user's arguments only (see `userArguments`). */
 export function parseCliArgs(argv: readonly string[]): CliArgs {
   const { values, positionals } = parseArgs({
     args: [...argv],

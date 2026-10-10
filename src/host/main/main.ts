@@ -9,7 +9,7 @@ import { Logger, LogLevel, parseLogLevel } from '../../platform/log';
 import { FileLogSink } from '../node/fileLogSink';
 import { createAppPaths, pruneOldLogs } from './appPaths';
 import { registerCcwSchemePrivileges } from './ccwProtocol';
-import { parseCliArgs } from './cli';
+import { parseCliArgs, userArguments } from './cli';
 import { ShellApp } from './shellApp';
 
 // Must happen before the app is ready.
@@ -17,7 +17,7 @@ registerCcwSchemePrivileges();
 // No application menu: it would bring Electron's default accelerators (Ctrl+W, Ctrl+R...).
 Menu.setApplicationMenu(null);
 
-const args = parseCliArgs(process.argv.slice(app.isPackaged ? 1 : 2));
+const args = parseCliArgs(userArguments(process.argv, app.isPackaged));
 const dataRoot = args.userDataDir ?? path.join(app.getPath('appData'), 'Vilausity');
 const paths = createAppPaths(dataRoot);
 app.setPath('userData', dataRoot);

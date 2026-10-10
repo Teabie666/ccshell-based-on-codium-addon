@@ -21,6 +21,7 @@ import { sessionsModule } from '../../features/sessions';
 import { settingsModule } from '../../features/settings';
 import { themesModule } from '../../features/themes';
 import { windowModule } from '../../features/window';
+import { workspaceModule } from '../../features/workspace';
 
 const modules: ShellModule[] = [
   windowModule,
@@ -37,6 +38,7 @@ const modules: ShellModule[] = [
   commandPaletteModule,
   extensionMenusModule,
   extensionHostStatusModule,
+  workspaceModule,
 ];
 
 startWorkbench(modules).catch((error: unknown) => {
