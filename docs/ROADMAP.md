@@ -14,7 +14,7 @@
 
 每个阶段结束都要做：typecheck、`npm test`、`node tests/ui.mjs`（动了 bridge / compat 再跑 `npm run smoke`）；看最新一次的 `shim-unimplemented.log`；确认没往 `C:\Program Files\VSCodium` 写任何东西、git 里没有密钥；用屏幕工具截图，跟 VSCodium 里的同一界面对比；用 `run-dev.cmd` 试用。
 
-测试现状（2026-10-10）：单元 231/231，语言包 0 条缺译（插件界面对照表 1454 条），界面 34/34，smoke 13/13（M3.5 后，用 Anthropic 兼容接口跑的）。
+测试现状（2026-10-10）：单元 253/253，语言包 0 条缺译（插件界面对照表 1454 条），界面 41/41，smoke 13/13（M4 第①块后，用 Anthropic 兼容接口跑的）。
 
 ## M0 技术验证：完成（2026-10-08）
 
@@ -158,7 +158,7 @@ M2 试用后加的。原来 PLAN 砍掉了设置图形界面，改为图形界�
 - [x] `vilaus://` 链接接到插件的 `window.registerUriHandler`，外部来的链接先问一次；往注册表登记协议放到 M6 的安装包
 - [x] 标题栏「文件夹 ▾」：最近的文件夹、打开文件夹…、在新窗口中打开…、在资源管理器中显示
 - [x] 插件调的内置命令：`vscode.openFolder`（插件的"打开文件夹"走它，不用在 bridge 拦截）、`workbench.action.openSettings`（打开设置编辑器并预填搜索词）、`revealFileInOS`
-- [ ] 测试和文档：CLI 解析、参数交给哪个窗口的单元测试；界面测试：第二个窗口、换文件夹后对话恢复、参数转发；ADR 0004
+- [x] 测试和文档：CLI 解析、窗口记录和恢复顺序的单元测试；界面测试：第二个窗口、换文件夹后对话恢复、关窗口、第二次启动转发文件夹 / `--goto` / `--prompt` / `vilaus://` 链接、不带文件夹启动时恢复窗口；ARCHITECTURE 的"窗口和工作区"、[ADR 0004](adr/0004-one-process-many-windows.md)
 
 ### ② API 接口（`features/providers`）
 
