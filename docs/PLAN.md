@@ -143,7 +143,7 @@ Electron main ── 窗口、CLI、单实例、配置/状态存储（唯一写�
 - **兜底**：整个 shim 包一层 Proxy，没实现的成员返回能调用的空函数，并写入 `logs/shim-unimplemented.log`。插件升级后先看它。
 - **bridge 拦截**（`host/exthost/bridge.ts`）：
   - `open_terminal / open_claude_in_terminal` → Windows Terminal；
-  - `open_folder*` → 壳的文件夹选择 / 新窗口；
+  - `open_folder*` → 壳的文件夹选择 / 新窗口（2026-10-10 研究后改：插件处理这两个请求时调的是 `vscode.openFolder` 命令，compat 实现这个命令就行，不用在 bridge 拦截）；
   - `open_output_panel` → 在内容面板打开日志；
   - `io_message`（用户消息）→ 附加评论块（见下）；
   - 其余原样转发。
@@ -187,14 +187,15 @@ Electron main ── 窗口、CLI、单实例、配置/状态存储（唯一写�
 - **数据目录**：`%APPDATA%\Vilausity\`，下面有 `settings.json`（JSONC）、`providers.json`（密钥字段是加密后的值）、`state\`、`logs\`、`extensions\`、`themes\`。Program Files 下的程序目录只读。
 - **设置的 schema** = 插件的 `contributes.configuration` + 各 feature 通过贡献点注册的设置（`vilaus.*`，以及壳照 VS Code 支持的 `editor.*`、`workbench.*` 等）。
 - **设置编辑器**（M2.5）：照 VS Code 的设置界面，作为内容面板的标签页（Ctrl+,）：搜索、分类目录、按类型给开关 / 下拉 / 输入框，改过的项有标记、可以还原，复杂的值去 settings.json 改；一个按钮切到在 Monaco 里编辑 settings.json（补全、悬停说明、按 schema 校验）。两边改了都保存后立即生效。编辑器的字体、字号等设置对普通编辑器和 diff 都生效。
-- 首次启动可以从 VSCodium 导入 `claudeCode.*` 和编辑器字体设置。
 - **CLI**：
   ```
   vilaus [folder] [--provider <id>] [--new-window] [--session <id>] [--prompt <文本>] [--goto <file:line>]
-          [--settings <file>] [--extension-dir <dir>] [--user-data-dir <dir>] [--theme <id>] [--log-level <lv>]
+          [--extension-dir <dir>] [--user-data-dir <dir>] [--theme <id>] [--log-level <lv>]
           [--devtools] [--version] [--help]
   ```
   第二次启动时，参数转发给已经在运行的实例。以管理员身份运行的实例用单独的 Chromium 数据目录，但共用配置，写入由 main 串行处理。
+- **多窗口**（2026-10-10 定）：一个进程管多个窗口，每个窗口一个工作区（文件夹）和一个插件进程；同一个文件夹只开一个窗口，再打开就切到那个窗口。在当前窗口打开文件夹 = 替换这个窗口的工作区（照 VS Code，回到原来的文件夹时对话会恢复），"在新窗口中打开"另有一项。不带文件夹启动时恢复上次的窗口。
+- 2026-10-10 定：不做从 VS Code / VSCodium 导入设置（原来写的是首次启动可以导入 `claudeCode.*` 和编辑器字体设置）；去掉 `--settings <file>`，要单独一份设置就用 `--user-data-dir`。
 
 ## 插件管理（脱离 VSCodium）
 

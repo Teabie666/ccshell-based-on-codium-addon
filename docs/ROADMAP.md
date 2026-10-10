@@ -140,40 +140,57 @@ M2 试用后加的。原来 PLAN 砍掉了设置图形界面，改为图形界�
 - [x] 测试：单元 +15（键、查表、模板类型和嵌套、对照表格式、页面提示）；界面测试 +1（中文下输入框提示、会话列表是中文，排除区里的文字不变，`aria-label` 不变，关掉设置立即回到英文，插件经壳弹出的提示是中文）；smoke 固定英文，13/13；另用 Anthropic 兼容接口跑过一次中文的真实会话（权限卡片、计划预览、计划确认卡片都是中文，消息列表和模型写的内容原样）
 - [x] 试用（2026-10-10）。试用后提的：翻成中文的插件界面文字跟对话内容是同一套字体，看着分不开，留到 M5 的视觉打磨
 
-## M4 配置 / CLI / API 接口 / 插件管理：未开始（有零星基础）
+## M4 配置 / CLI / API 接口 / 插件管理：进行中
 
-设置
+2026-10-10 定的做法（PLAN 的"配置和 CLI"一节也记了）：分五块按顺序做，每块做完提交。
 
-- 设置的 schema 贡献点、设置界面、在 Monaco 里编辑 settings.json：挪到了 M2.5
-- [ ] 首次启动可以从 VSCodium 导入 `claudeCode.*` 和编辑器字体设置
+- 多窗口：一个进程管多个窗口，主进程分成全局的一份和每个窗口一份；同一个文件夹只开一个窗口。在当前窗口打开文件夹 = 替换这个窗口的工作区（照 VS Code），"在新窗口中打开"另有一项；不带文件夹启动时恢复上次的窗口。
+- 不做从 VS Code / VSCodium 导入设置；去掉 `--settings`（要单独一份设置就用 `--user-data-dir`）。
+- 设置的 schema 贡献点、设置界面、在 Monaco 里编辑 settings.json：挪到了 M2.5。
 
-CLI 和窗口
+### ① 多窗口、单实例、CLI、文件夹
 
+- [ ] 重构（行为不变）：主进程拆成全局（设置、主题、语言、globalState、webview 文档、ccw 协议）和每个窗口一份（窗口、插件进程、工作区和 workspaceState）；渲染进程的 IPC 按发送的窗口分发，设置 / 主题 / 语言变了通知所有窗口；插件的 globalState 在各窗口的插件进程之间同步；日志按窗口分子目录
+- [ ] 多窗口：新建窗口、关闭窗口、退出；窗口位置按文件夹记；最近打开的文件夹；退出时记下开着的窗口，不带文件夹启动时恢复（一个个关掉的只恢复最后关的那个，"退出"和重启恢复全部）
 - [x] 已有的参数：`[folder]` / `--folder`、`--extension-dir`、`--user-data-dir`、`--theme`、`--log-level`、`--devtools`、`--secondary-display`（窗口开在非主显示器上，测试用）
-- [ ] 补齐：`--provider`、`--new-window`、`--session`、`--prompt`、`--goto <file:line>`、`--settings`、`--version`、`--help`
-- [ ] 单实例：第二次启动时，参数转发给已经在运行的实例
-- [ ] 标题栏「文件夹 ▾」：切换或打开别的文件夹（开新窗口）；bridge 拦截插件的 `open_folder*`，改走壳的文件夹选择 / 新窗口
-- [ ] 以管理员身份运行的实例用单独的 Chromium 数据目录，但共用配置，写入由 main 串行处理
-- [ ] `window.registerUriHandler` 接到 vilaus:// 协议
+- [ ] 补齐：`--new-window`、`--session`、`--prompt`、`--goto <file:line[:col]>`、`--version`、`--help`（`--provider` 在 ②）
+- [ ] 单实例：第二次启动时，参数转发给已经在运行的实例（数据目录相同才算同一个实例，所以测试实例互不干扰）
+- [ ] `vilaus://` 链接接到插件的 `window.registerUriHandler`，外部来的链接先问一次；往注册表登记协议放到 M6 的安装包
+- [ ] 标题栏「文件夹 ▾」：最近的文件夹、打开文件夹…、在新窗口中打开…、在资源管理器中显示
+- [ ] 插件调的内置命令：`vscode.openFolder`（插件的"打开文件夹"走它，不用在 bridge 拦截）、`workbench.action.openSettings`（打开设置编辑器并预填搜索词）、`revealFileInOS`
+- [ ] 测试和文档：CLI 解析、参数交给哪个窗口的单元测试；界面测试：第二个窗口、换文件夹后对话恢复、参数转发；ADR 0004
 
-API 接口（`features/providers`）
+### ② API 接口（`features/providers`）
+
+开工前再研究、再确认：预设列哪些（base URL、模型名查各家官方文档）、强调色怎么显示、要不要从 VSCodium 的配置档导入接口。
 
 - [ ] 接口配置：`type`（subscription / anthropic-api / compatible / bedrock / vertex / foundry）、`baseUrl`、鉴权方式（apiKey → `ANTHROPIC_API_KEY`，bearer → `ANTHROPIC_AUTH_TOKEN`）、模型映射（主模型，Opus / Sonnet / Haiku / Fable 各档，子代理，模型选择器里显示的 `_NAME` / `_DESCRIPTION`，额外的自定义模型选项）、自定义请求头、超时、最大输出、关闭非必要流量、任意额外环境变量
 - [ ] 切换接口 = 改写传给插件的 `claudeCode.environmentVariables`（加上 `disableLoginPrompt` 和 `CLAUDE_CODE_SKIP_AUTH_LOGIN`）；新开的对话生效，已经打开的对话提示重开
 - [ ] 标题栏「API 接口 ▾」切换；CLI `--provider <id>`；窗口用不同的强调色区分接口
 - [ ] 内置预设（数据文件）：Claude 订阅、Anthropic API、DeepSeek、Kimi、GLM、Qwen…，用户可以增删
 - [ ] 密钥用 Electron `safeStorage`（Windows DPAPI）加密存放，绝不明文写进 settings.json，绝不进安装包
-- [ ] 从 VSCodium 的 DeepSeek 配置档（`profiles\-68229e90`）导入成一个"DeepSeek"接口，导入后密钥立即加密
+- [ ] 从 VSCodium 的 DeepSeek 配置档（`profiles\-68229e90`）导入成一个"DeepSeek"接口，导入后密钥立即加密（待定，见上）
 - [ ] "为此接口创建快捷方式"（比如 `Vilausity.exe --provider deepseek`）
-- [ ] 单元测试：接口生成的环境变量；smoke：切到一个兼容接口，新对话的子进程环境变量正确（只检查环境，不实际调用）
+- [ ] 单元测试：接口生成的环境变量；smoke：本机起一个假接口，切到指向它的接口发一句话，检查它收到的 key、模型名和请求头（不花钱、不联网）
 
-插件管理（脱离 VSCodium）
+### ③ 插件管理（脱离 VSCodium）
+
+开工前再研究、再确认：自动更新默认开还是关。
 
 - [x] 开发时用 `--extension-dir` 指定插件目录（不指定就从 VSCodium 的安装目录找）
 - [ ] 查询 Open VSX → 下载 VSIX → 用 `.sha256` 校验 → 解压 `extension/` 到 `extensions\anthropic.claude-code-<ver>\` → 下次启动时切换过去；保留上一个版本用于回滚
 - [ ] 设置项：自动更新开关、锁定版本；记录"最后一个能正常运行的版本"，新版本激活失败或者没实现的 API 突然变多，就提示回滚
 - [ ] 下载不了时的备用办法：手动选 `.vsix` 文件导入，或者用本机 VS Code / VSCodium 里装好的插件（检查包结构和 `package.json` 的发布者、名字、平台）
-- [ ] 首次启动：显示下载进度，下完走登录，或者选一个 API 接口；提示一次可选安装 Git for Windows（没有也能用，Claude 改用 PowerShell）
+
+### ④ 首次启动
+
+- [ ] 找不到插件时窗口照常打开，显示首次启动页：下载（显示进度）/ 选 `.vsix` / 用本机 VS Code、VSCodium 里装好的；装好后启动插件，然后走登录，或者选一个 API 接口
+- [ ] 提示一次可选安装 Git for Windows（没有也能用，Claude 改用 PowerShell）
+
+### ⑤ 管理员实例
+
+- [ ] 以管理员身份运行的实例用单独的 Chromium 数据目录，不参与单实例转发（普通实例和管理员实例可以同时开）；设置和接口共用，状态分开；标题栏标出来
+- [ ] 先验证：safeStorage 的密钥如果跟着 Chromium 数据目录走，管理员实例能不能解开普通实例存的密钥
 
 ## M5 名字、图标、视觉打磨：未开始
 
